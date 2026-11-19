@@ -383,9 +383,9 @@ export function settingsView(c) {
   <header class="page-head rise"><h1>Réglages</h1></header>
 
   <section class="card list rise">
-    <label class="row">
+    <label class="row stack">
       <span class="row-text"><b>Prénom</b><small>Pour que l’accueil te salue</small></span>
-      <input class="text-input" type="text" inputmode="text" autocomplete="given-name" maxlength="24" placeholder="Optionnel" value="${esc(state.name)}" data-input="name" />
+      <input class="text-input wide" type="text" inputmode="text" autocomplete="given-name" maxlength="24" placeholder="Ton prénom (optionnel)" value="${esc(state.name)}" data-input="name" />
     </label>
     <div class="row stack">
       <span class="row-text"><b>Objectif quotidien</b><small>Une minute suffit pour garder ta série ; l’objectif te donne un cap.</small></span>
