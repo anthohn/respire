@@ -233,3 +233,14 @@ test('réglages : le guidage sonore est actif par défaut, y compris pour les an
   assert.equal(mine.soundStyle, 'reperes');
   assert.equal(withStored({ settings: { sound: true, soundStyle: 'inconnu' } }).soundStyle, 'vague');
 });
+
+import { isUnlimited, UNLIMITED, DURATIONS } from '../js/breath.js';
+
+test('durée libre : pas de fin, un choix de plus à côté des durées', () => {
+  assert.ok(isUnlimited(UNLIMITED));
+  assert.ok(DURATIONS.includes(UNLIMITED));
+  assert.ok(!isUnlimited(5));
+  const plan = sessionPlan(PRESETS.find((p) => p.id === 'long'), UNLIMITED);
+  assert.equal(plan.totalSeconds, Infinity);
+  assert.equal(plan.cycles, Infinity);
+});

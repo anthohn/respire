@@ -135,3 +135,43 @@ test('piste : fichier WAV valide', async () => {
   for (const i of [0, 5000, 20000, pcm.length - 1]) assert.equal(buf.getInt16(44 + i * 2, true), pcm[i]);
   assert.ok(cycleLength(preset('long')) === 10);
 });
+
+import { loopCycles } from '../js/track.js';
+
+for (const style of ['vague', 'nappe', 'reperes']) {
+  test(`piste en boucle « ${style} » : un nombre rond de cycles, sans installation, et la jonction est invisible`, async () => {
+    const p = preset('long');
+    const { pcm, rate, plan } = await renderTrack({ preset: p, style, loop: true });
+    assert.equal(plan.loop, true);
+    assert.equal(plan.lead, 0);
+    assert.equal(plan.tail, 0);
+    assert.equal(plan.cycles % 3, 0, 'multiple de 3 : les variantes de bruit reviennent dans l’ordre');
+    assert.equal(pcm.length, plan.cycles * plan.len * rate);
+    assert.ok(pcm.length / rate > 150 && pcm.length / rate < 330, `quelques minutes : ${pcm.length / rate} s`);
+    // La fin enchaîne sur le début comme n'importe quelle jonction de cycles : aucun saut plus grand qu'ailleurs.
+    const jump = (i) => Math.abs(pcm[(i + pcm.length) % pcm.length] - pcm[(i - 1 + pcm.length) % pcm.length]) / 32768;
+    const around = (center, w = 80) => {
+      let m = 0;
+      for (let i = center - w; i < center + w; i++) m = Math.max(m, jump(i));
+      return m;
+    };
+    const seam = around(0);
+    const baseline = Math.max(around(Math.round(plan.len * rate * 5)), around(Math.round(plan.len * rate * 7)));
+    assert.ok(seam <= 2 * baseline + 1e-4, `jonction de la boucle : ${seam} contre ${baseline}`);
+    assert.ok(peakOf(pcm) <= 0.5);
+  });
+}
+
+test('piste en boucle : parfaitement périodique (un tour de trois cycles est identique au suivant)', async () => {
+  const p = preset('long');
+  const { pcm, rate, plan } = await renderTrack({ preset: p, style: 'vague', loop: true });
+  const period = 3 * plan.len * rate;
+  const a = 2 * period / 3 | 0; // loin des jonctions
+  for (const i of [a, a + 1234, a + 20000, a + 50000]) assert.equal(pcm[i], pcm[i + period], 'même échantillon un tour de trois cycles plus tard');
+});
+
+test('piste en boucle : un 4-7-8 donne aussi un tour d’environ quatre minutes', () => {
+  const n = loopCycles(preset('478'));
+  assert.equal(n % 3, 0);
+  assert.ok(n * 19 > 150 && n * 19 < 330);
+});

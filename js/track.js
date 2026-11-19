@@ -25,11 +25,24 @@ const XFADE = 0.04; // demi-durée du fondu enchaîné entre deux morceaux de br
 const PEAK = 0.5; // niveau maximal de la piste à volume 100 % (les boutons du téléphone règlent le reste)
 
 /** Plan d'une piste : durées de chaque partie, en secondes. */
-export function trackPlan(preset, minutes, { cycles, lead = LEAD, tail = TAIL } = {}) {
+export function trackPlan(preset, minutes, { cycles, lead = LEAD, tail = TAIL, loop = false } = {}) {
   const len = cycleLength(preset);
+  if (loop) {
+    // Piste en boucle (session sans limite) : ni installation ni retombée, des cycles seulement.
+    const n = loopCycles(preset);
+    return { len, cycles: n, lead: 0, tail: 0, breath: n * len, total: n * len, loop: true };
+  }
   const n = cycles ?? sessionPlan(preset, minutes).cycles;
   const breath = n * len;
-  return { len, cycles: n, lead, tail, breath, total: lead + breath + tail };
+  return { len, cycles: n, lead, tail, breath, total: lead + breath + tail, loop: false };
+}
+
+/**
+ * Nombre de cycles d'une piste en boucle : environ quatre minutes, et un multiple de 3 (les trois variantes de bruit
+ * reviennent alors dans le même ordre, et la jonction entre la fin et le début est un fondu comme les autres).
+ */
+export function loopCycles(preset) {
+  return 3 * Math.max(1, Math.round(80 / cycleLength(preset)));
 }
 
 /** Générateur pseudo-aléatoire (xorshift32) : le même bruit à chaque rendu, ce qui rend les tests reproductibles. */
@@ -116,10 +129,11 @@ function padSegment(i0, n, rate, len, bAt) {
 // ---------- Rendu ----------
 
 /** Ajoute `src` (déjà pondéré par `weight(j)`) dans `pcm` à partir de l'indice `at`, en ignorant ce qui sort de la piste. */
-function mixInto(pcm, at, src, scale, weight) {
+function mixInto(pcm, at, src, scale, weight, circular = false) {
   for (let j = 0; j < src.length; j++) {
-    const i = at + j;
-    if (i < 0 || i >= pcm.length) continue;
+    let i = at + j;
+    if (circular) i = mod(i, pcm.length); // en boucle, la fin déborde sur le début et inversement
+    else if (i < 0 || i >= pcm.length) continue;
     const v = pcm[i] + Math.round(src[j] * scale * (weight ? weight(j) : 1) * 32767);
     pcm[i] = v > 32767 ? 32767 : v < -32768 ? -32768 : v;
   }
@@ -129,8 +143,8 @@ function mixInto(pcm, at, src, scale, weight) {
  * Fabrique la piste. Renvoie { pcm: Int16Array, rate, plan }.
  * `style` : 'vague' | 'nappe' | 'reperes'. `volume` : 0..100 (niveau de la piste ; le volume du téléphone règle le reste).
  */
-export async function renderTrack({ preset, minutes, cycles, style = DEFAULT_GUIDE, volume = 100, lead, tail, rate = TRACK_RATE } = {}) {
-  const plan = trackPlan(preset, minutes, { cycles, lead, tail });
+export async function renderTrack({ preset, minutes, cycles, style = DEFAULT_GUIDE, volume = 100, lead, tail, rate = TRACK_RATE, loop = false } = {}) {
+  const plan = trackPlan(preset, minutes, { cycles, lead, tail, loop });
   const L = plan.len * rate;
   const leadN = Math.round(plan.lead * rate);
   const tailN = Math.round(plan.tail * rate);
@@ -144,9 +158,10 @@ export async function renderTrack({ preset, minutes, cycles, style = DEFAULT_GUI
   const level = PEAK * gainFor(volume);
 
   // Fondu d'entrée et de sortie de toute la piste.
-  const fadeIn = style === 'reperes' ? 0.05 : 2;
-  const fadeOut = style === 'reperes' ? 0.6 : 3;
+  const fadeIn = loop ? 0 : style === 'reperes' ? 0.05 : 2;
+  const fadeOut = loop ? 0 : style === 'reperes' ? 0.6 : 3;
   const master = (i) => {
+    if (loop) return 1;
     const a = Math.min(1, i / (fadeIn * rate));
     const b = Math.min(1, (total - i) / (fadeOut * rate));
     const x = Math.min(a, b);
@@ -170,13 +185,15 @@ export async function renderTrack({ preset, minutes, cycles, style = DEFAULT_GUI
     for (let i = 0; i < cycle.length; i++) if (Math.abs(cycle[i]) > peak) peak = Math.abs(cycle[i]);
     const scale = level / peak;
     for (let c = 0; c < plan.cycles; c++) mixInto(pcm, leadN + c * L, cycle, scale);
-    const edge = new Float32Array(Math.max(leadN, tailN) + 3 * rate);
-    place(edge, CHIMES.start, 0.4, false);
-    mixInto(pcm, 0, edge.subarray(0, leadN), level / peak);
-    const endChime = new Float32Array(tailN + rate);
-    place(endChime, CHIMES.end, 0, false);
-    mixInto(pcm, leadN + plan.cycles * L, endChime.subarray(0, tailN), level / peak);
-    for (let i = 0; i < total; i++) if (i < fadeIn * rate || total - i < fadeOut * rate) pcm[i] = Math.round(pcm[i] * master(i));
+    if (!loop) {
+      const edge = new Float32Array(Math.max(leadN, tailN) + 3 * rate);
+      place(edge, CHIMES.start, 0.4, false);
+      mixInto(pcm, 0, edge.subarray(0, leadN), level / peak);
+      const endChime = new Float32Array(tailN + rate);
+      place(endChime, CHIMES.end, 0, false);
+      mixInto(pcm, leadN + plan.cycles * L, endChime.subarray(0, tailN), level / peak);
+      for (let i = 0; i < total; i++) if (i < fadeIn * rate || total - i < fadeOut * rate) pcm[i] = Math.round(pcm[i] * master(i));
+    }
     return { pcm, rate, plan };
   }
 
@@ -207,22 +224,28 @@ export async function renderTrack({ preset, minutes, cycles, style = DEFAULT_GUI
   };
 
   // Début : fond au niveau « poumons vides ».
-  mixInto(pcm, 0, tonal(-leadN, leadN, rate, plan.len, silent), scale);
-  if (useNoise) mixInto(pcm, -X, noiseSegment(7, leadN, X, rate, silent), scale, noiseWeight(leadN, true, false));
+  if (leadN > 0) {
+    mixInto(pcm, 0, tonal(-leadN, leadN, rate, plan.len, silent), scale);
+    if (useNoise) mixInto(pcm, -X, noiseSegment(7, leadN, X, rate, silent), scale, noiseWeight(leadN, true, false));
+  }
   // Cycles.
   for (let c = 0; c < plan.cycles; c++) {
     const s = leadN + c * L;
     mixInto(pcm, s, tonalCycle, scale);
-    if (useNoise) mixInto(pcm, s - X, variants[c % variants.length], scale, noiseWeight(L, false, false));
+    if (useNoise) mixInto(pcm, s - X, variants[c % variants.length], scale, noiseWeight(L, false, false), loop);
     if (c % 8 === 7) await pause();
   }
   // Fin.
   const tailAt = leadN + plan.cycles * L;
-  mixInto(pcm, tailAt, tonal(plan.cycles * L, tailN, rate, plan.len, silent), scale);
-  if (useNoise) mixInto(pcm, tailAt - X, noiseSegment(11, tailN, X, rate, silent), scale, noiseWeight(tailN, false, true));
+  if (tailN > 0) {
+    mixInto(pcm, tailAt, tonal(plan.cycles * L, tailN, rate, plan.len, silent), scale);
+    if (useNoise) mixInto(pcm, tailAt - X, noiseSegment(11, tailN, X, rate, silent), scale, noiseWeight(tailN, false, true));
+  }
 
-  for (let i = 0; i < total; i++) {
-    if (i < fadeIn * rate || total - i < fadeOut * rate) pcm[i] = Math.round(pcm[i] * master(i));
+  if (!loop) {
+    for (let i = 0; i < total; i++) {
+      if (i < fadeIn * rate || total - i < fadeOut * rate) pcm[i] = Math.round(pcm[i] * master(i));
+    }
   }
   return { pcm, rate, plan };
 }

@@ -1,7 +1,7 @@
 // Vues : chaque fonction renvoie du HTML à partir de l'état. Aucune logique d'événement ici.
 
 import { icon } from './icons.js';
-import { PRESETS, DURATIONS, getPreset, patternLabel, sessionPlan } from './breath.js';
+import { PRESETS, DURATIONS, UNLIMITED, isUnlimited, getPreset, patternLabel, sessionPlan } from './breath.js';
 import {
   BADGES, LEVELS, levelInfo, weekKeys, minutesOn, formatDuration, parseKey, dayKey, earnedBadgeIds,
 } from './stats.js';
@@ -122,8 +122,8 @@ export function homeView(c) {
     <p class="lede">${lede({ stats, hour: now.getHours() })}</p>
     <button class="hero-orb" data-action="start" aria-label="Commencer une session">${orb('idle')}</button>
     <button class="hero-hint" data-action="start" tabindex="-1" aria-hidden="true">Touche la bulle pour respirer</button>
-    <button class="session-chip" data-action="open-sheet" aria-label="Modifier la session : ${esc(preset.name)}, ${patternLabel(preset)}, ${minutes} minutes">
-      <span><b>${esc(preset.name)}</b> <i>·</i> ${patternLabel(preset)} <i>·</i> ${minutes} min</span>${icon.settings(16)}
+    <button class="session-chip" data-action="open-sheet" aria-label="Modifier la session : ${esc(preset.name)}, ${patternLabel(preset)}, ${isUnlimited(minutes) ? 'sans limite' : `${minutes} minutes`}">
+      <span><b>${esc(preset.name)}</b> <i>·</i> ${patternLabel(preset)} <i>·</i> ${isUnlimited(minutes) ? 'sans limite' : `${minutes} min`}</span>${icon.settings(16)}
     </button>
   </section>
 
@@ -478,12 +478,12 @@ export function sheetView(c, { dir = 0 } = {}) {
 
   <div class="sheet-body">
     <div class="seg big" role="radiogroup" aria-label="Durée">
-      ${DURATIONS.map((d) => `<button role="radio" aria-checked="${d === s.minutes}" class="${d === s.minutes ? 'on' : ''}" data-action="pick-minutes" data-min="${d}">${d} min</button>`).join('')}
+      ${DURATIONS.map((d) => `<button role="radio" aria-checked="${d === s.minutes}" class="${d === s.minutes ? 'on' : ''}" data-action="pick-minutes" data-min="${d}" ${d === UNLIMITED ? 'aria-label="Sans limite"' : ''}>${d === UNLIMITED ? 'Libre' : `${d} min`}</button>`).join('')}
     </div>
   </div>
 
   <footer class="sheet-foot">
-    <button class="cta" data-action="start-from-sheet">Commencer · ${formatDuration(plan.totalSeconds)}<span class="cta-ico">${icon.chevronRight(20)}</span></button>
+    <button class="cta" data-action="start-from-sheet">Commencer${Number.isFinite(plan.totalSeconds) ? ` · ${formatDuration(plan.totalSeconds)}` : ''}<span class="cta-ico">${icon.chevronRight(20)}</span></button>
   </footer>`;
 }
 

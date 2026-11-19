@@ -6,7 +6,7 @@
 
 import { patternLabel } from './breath.js';
 import { formatDuration } from './stats.js';
-import { renderTrack, wavBlob, TRACK_RATE } from './track.js';
+import { renderTrack, wavBlob, TRACK_RATE, LEAD } from './track.js';
 
 const TAIL_GRACE_MS = 9000; // après la fin de la séance, on laisse sonner la retombée, puis on libère tout
 
@@ -23,6 +23,11 @@ export class Guide {
     this.handlers = {};
     this.unlocked = Promise.resolve(null);
     this.muted0 = o.muted;
+    // Piste en boucle (session sans limite) : le temps de la session continue de croître à chaque tour.
+    this.loopLen = 0; // durée d'un tour (s), 0 si la piste ne boucle pas
+    this.origin = 0; // position de la piste qui correspond au temps 0 de la session
+    this.loops = 0;
+    this.lastCt = 0;
   }
 
   /** Vrai dès que la piste joue (ou est en pause) : c'est elle qui donne l'heure. */
@@ -30,8 +35,15 @@ export class Guide {
     return this.state === 'active';
   }
 
+  /** Temps de la session (installation comprise), en secondes : la position de lecture, tours de boucle compris. */
   get time() {
-    return this.audio ? this.audio.currentTime : 0;
+    const a = this.audio;
+    if (!a) return 0;
+    if (!this.loopLen) return a.currentTime;
+    const ct = a.currentTime;
+    if (ct < this.lastCt - this.loopLen / 2) this.loops += 1; // la piste vient de reboucler
+    this.lastCt = ct;
+    return this.loops * this.loopLen + ct - this.origin;
   }
 
   get paused() {
@@ -78,18 +90,24 @@ export class Guide {
     if (this.state !== 'idle') return false;
     if (!this.audio) return this.fail({ name: 'son indisponible' });
     this.state = 'starting';
-    const { preset, cycles, style } = this.o;
-    const { pcm, rate } = await renderTrack({ preset, cycles, style });
+    const { preset, cycles, style, loop } = this.o;
+    const { pcm, rate } = await renderTrack({ preset, cycles, style, loop });
     const refused = await this.unlocked;
     if (this.state !== 'starting') return false;
     if (refused) return this.fail(refused);
     const a = this.audio;
     a.src = this.url(wavBlob(pcm, rate));
+    if (loop) {
+      // Le « temps 0 » est placé juste avant la fin du tour : les dernières secondes (une fin d'expiration qui s'apaise)
+      // servent d'installation, puis la piste reboucle sur la première inspiration.
+      this.loopLen = pcm.length / rate;
+      this.origin = this.loopLen - LEAD;
+      a.loop = true;
+    }
     this.bind();
     try {
       await this.loaded();
-      const t = at();
-      if (t > 0.05) a.currentTime = t;
+      this.seek(at());
       await a.play();
     } catch (e) {
       return this.fail(e);
@@ -162,10 +180,19 @@ export class Guide {
     this.audio?.pause();
   }
 
+  /** Se place au temps `t` de la session. */
   seek(t) {
     if (!this.audio) return;
+    let ct = t;
+    if (this.loopLen) {
+      const p = t + this.origin;
+      this.loops = Math.floor(p / this.loopLen);
+      ct = p - this.loops * this.loopLen;
+      this.lastCt = ct;
+    }
+    if (ct < 0.05 && !this.loopLen) return;
     try {
-      this.audio.currentTime = t;
+      this.audio.currentTime = ct;
     } catch {
       /* piste pas encore chargée */
     }
@@ -202,12 +229,12 @@ export class Guide {
   setupMediaSession() {
     const ms = navigator.mediaSession;
     if (!ms) return;
-    const { preset, cycles } = this.o;
+    const { preset, cycles, loop } = this.o;
     try {
       ms.metadata = new MediaMetadata({
         title: `${preset.name} · ${patternLabel(preset)}`,
         artist: 'Respire',
-        album: formatDuration(cycles * (preset.inhale + preset.hold1 + preset.exhale + preset.hold2)),
+        album: loop ? 'Sans limite' : formatDuration(cycles * (preset.inhale + preset.hold1 + preset.exhale + preset.hold2)),
         artwork: [
           { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },
@@ -242,7 +269,7 @@ export class Guide {
   position() {
     const a = this.audio;
     const ms = navigator.mediaSession;
-    if (!ms?.setPositionState || !a || !Number.isFinite(a.duration) || this.state !== 'active') return;
+    if (!ms?.setPositionState || !a || this.loopLen || !Number.isFinite(a.duration) || this.state !== 'active') return; // pas de progression pour une boucle
     try {
       ms.setPositionState({ duration: a.duration, position: Math.min(a.currentTime, a.duration), playbackRate: 1 });
     } catch {

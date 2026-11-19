@@ -34,6 +34,7 @@ export class Session {
     const plan = sessionPlan(this.preset, opts.minutes);
     this.total = plan.totalSeconds;
     this.cycles = plan.cycles;
+    this.unlimited = !Number.isFinite(plan.totalSeconds); // durée libre : la session ne s'arrête pas toute seule
     this.soundOn = opts.sound;
     this.hapticsOn = opts.haptics;
     this.guide = null; // le guidage sonore (piste audio) : quand il joue, c'est lui qui donne l'heure
@@ -185,8 +186,8 @@ export class Session {
 
       <footer class="s-bottom">
         <div class="s-time">
-          <span class="s-remaining" data-el="remaining">${formatClock(this.total)}</span>
-          <span class="s-cycles" data-el="cycles">${this.cycles} respirations</span>
+          <span class="s-remaining" data-el="remaining">${formatClock(this.unlimited ? 0 : this.total)}</span>
+          <span class="s-cycles" data-el="cycles">${this.unlimited ? 'Sans limite' : `${this.cycles} respirations`}</span>
         </div>
         <button class="round-btn" data-s="toggle" data-el="toggle" aria-label="Pause">${icon.pause(26)}</button>
       </footer>
@@ -274,7 +275,7 @@ export class Session {
 
   tickRun(now) {
     this.elapsed = this.guideOn() ? Math.max(0, this.guide.time - INTRO_SECONDS) : (now - this.runStart) / 1000;
-    if (this.elapsed >= this.total) {
+    if (!this.unlimited && this.elapsed >= this.total) {
       this.complete();
       return;
     }
@@ -289,6 +290,7 @@ export class Session {
     const g = (this.guide = new Guide({
       preset: this.preset,
       cycles: this.cycles,
+      loop: this.unlimited, // piste en boucle : elle tourne tant que la session dure
       style: this.opts.soundStyle,
       muted: !this.soundOn,
       // Pause ou reprise venues d'ailleurs : écran de verrouillage, voiture, appel, écouteurs débranchés.
@@ -341,10 +343,12 @@ export class Session {
 
     const left = Math.max(1, Math.ceil(p.phaseDur - p.phaseT - 1e-6));
     this.text('count', left);
-    this.text('remaining', formatClock(this.total - t));
-    this.text('cycles', `Respiration ${Math.min(p.cycle + 1, this.cycles)} sur ${this.cycles}`);
+    // Durée libre : le temps compte vers le haut ; sinon, il décompte jusqu'à la fin.
+    const clock = formatClock(this.unlimited ? t : this.total - t);
+    this.text('remaining', clock);
+    this.text('cycles', this.unlimited ? `Respiration ${p.cycle + 1}` : `Respiration ${Math.min(p.cycle + 1, this.cycles)} sur ${this.cycles}`);
     // Le titre de l'onglet suit la session : on la voit même quand l'onglet est caché.
-    this.setTitle(`${PHASE_LABEL[p.phase]} · ${formatClock(this.total - t)}`);
+    this.setTitle(`${PHASE_LABEL[p.phase]} · ${clock}`);
 
   }
 
@@ -606,7 +610,8 @@ export class Session {
     const cycles = Math.floor(this.elapsed / cycleLength(this.preset));
     this.hideConfirm();
     this.end();
-    this.opts.onFinish({ seconds, cycles, completed: false });
+    // Sans limite, l'arrêt est la fin naturelle de la session.
+    this.opts.onFinish({ seconds, cycles, completed: this.unlimited });
   }
 
   complete() {

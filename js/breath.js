@@ -28,7 +28,11 @@ export const PRESETS = [
   },
 ];
 
-export const DURATIONS = [1, 3, 5, 10];
+/** Durée « libre » : la session ne s'arrête pas toute seule, on la termine quand on veut. */
+export const UNLIMITED = 0;
+export const DURATIONS = [1, 3, 5, 10, UNLIMITED];
+
+export const isUnlimited = (minutes) => !(minutes > 0);
 
 export const DEFAULT_PRESET_ID = 'long';
 
@@ -49,6 +53,7 @@ export function patternLabel(p) {
 /** Nombre de cycles entiers pour approcher la durée demandée (la session finit sur une expiration complète). */
 export function sessionPlan(preset, minutes) {
   const len = cycleLength(preset);
+  if (isUnlimited(minutes)) return { cycles: Infinity, totalSeconds: Infinity };
   const target = minutes * 60;
   // Une session doit toujours compter pour la série (au moins 60 s) : on arrondit vers le haut si besoin.
   const cycles = Math.max(1, Math.round(target / len), Math.ceil(Math.min(target, 60) / len));
