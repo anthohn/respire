@@ -896,3 +896,18 @@ body.in-session .tabbar { display: none; }
 .pw-row span { width: 84px; flex: none; font-size: 13.5px; font-weight: 700; color: var(--muted); }
 .pw-row .text-input { flex: 1; width: auto; min-width: 0; text-align: left; opacity: 0.85; }
 .pw-form > .text-input { margin: 0; }
+
+/* ---------- Carte de synchronisation : plus sobre ---------- */
+.btn.small { min-height: 44px; padding: 0 14px; border-radius: 14px; font-size: 15px; }
+.sync-status { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; color: var(--muted); }
+.sync-status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 10px var(--good); }
+.code-box { flex-direction: row; justify-content: center; padding: 16px; }
+.pw-form.quiet { gap: 0; padding: 2px 4px; }
+.pw-form.quiet .pw-row { padding: 8px 0; border-top: 1px solid var(--line); }
+.pw-form.quiet .pw-row:first-child { border-top: 0; }
+.pw-form.quiet .pw-row span { width: 88px; font-size: 13px; font-weight: 600; }
+.pw-form.quiet .text-input { min-height: 28px; padding: 0; background: transparent; border: 0; box-shadow: none; border-radius: 0; font-size: 15px; font-weight: 600; color: var(--muted); opacity: 1; }
+.pw-form.quiet .text-input:focus { box-shadow: none; color: var(--ink); }
+.link-stack { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 2px; }
+.link-stack .link-btn { font-size: 14px; }
+.link-btn.danger { color: #d4493f; }

@@ -338,36 +338,41 @@ function syncSection({ state, ui }) {
       <button type="button" class="link-btn" data-action="sync-peek">Afficher le code</button>
       ${error}
       <div class="btn-row">
-        <button type="button" class="btn ghost" data-action="sync-cancel">Annuler</button>
-        <button type="submit" class="btn accent" ${u.busy ? 'disabled' : ''}>${u.busy ? 'Connexion…' : 'Se connecter'}</button>
+        <button type="button" class="btn small ghost" data-action="sync-cancel">Annuler</button>
+        <button type="submit" class="btn small accent" ${u.busy ? 'disabled' : ''}>${u.busy ? 'Connexion…' : 'Se connecter'}</button>
       </div>
     </form>` : `
     ${error}
     <div class="btn-row">
-      <button class="btn accent" data-action="sync-enable" ${u.busy ? 'disabled' : ''}>${u.busy ? 'Activation…' : 'Activer'}</button>
-      <button class="btn" data-action="sync-enter">J’ai un code</button>
+      <button class="btn small accent" data-action="sync-enable" ${u.busy ? 'disabled' : ''}>${u.busy ? 'Activation…' : 'Activer'}</button>
+      <button class="btn small" data-action="sync-enter">J’ai un code</button>
     </div>`}
   </section>`;
   }
   return `
   <section class="card list rise">
     <p class="list-title">Synchronisation</p>
-    <p class="fine left"><b>Active</b> · dernière synchronisation ${ago(sy.lastSync)}${u.busy ? ' · en cours…' : ''}</p>
+    <p class="sync-status"><i class="dot"></i>Active · ${u.busy ? 'synchronisation en cours…' : `à jour ${ago(sy.lastSync)}`}</p>
     ${u.revealed ? `
-    <div class="code-box"><b class="code">${formatCode(sy.code)}</b><button class="btn" data-action="sync-copy">Copier</button></div>
-    <form class="pw-form" data-form="sync-save" autocomplete="on" novalidate>
+    <div class="code-box"><b class="code">${formatCode(sy.code)}</b></div>
+    <form id="sync-save-form" class="pw-form quiet" data-form="sync-save" autocomplete="on" novalidate>
       <label class="pw-row"><span>Identifiant</span><input class="text-input" type="text" name="username" value="Respire" autocomplete="username" autocapitalize="off" spellcheck="false" /></label>
       <label class="pw-row"><span>Code</span><input class="text-input" type="password" name="password" value="${esc(sy.code)}" autocomplete="new-password" readonly /></label>
-      <button type="submit" class="btn accent wide">Enregistrer dans mon gestionnaire de mots de passe</button>
     </form>
-    <p class="fine left">Sans ce code, impossible de retrouver tes données sur un autre appareil, et personne ne peut le récupérer à ta place. Ne le partage pas.</p>` : ''}
+    <div class="btn-row">
+      <button type="button" class="btn small" data-action="sync-copy">Copier</button>
+      <button type="submit" form="sync-save-form" class="btn small">Enregistrer</button>
+    </div>
+    <p class="fine left">${ui.ios ? 'Sur iPhone : touche « Copier », puis ajoute le code dans l’app Mots de passe. ' : ''}Sans ce code, tu ne pourras pas retrouver tes données sur un autre appareil, et personne ne peut le récupérer à ta place. Ne le partage pas.</p>` : ''}
     ${error}
     <div class="btn-row">
-      <button class="btn" data-action="sync-now" ${u.busy ? 'disabled' : ''}>Synchroniser</button>
-      <button class="btn" data-action="sync-reveal">${u.revealed ? 'Masquer le code' : 'Afficher mon code'}</button>
+      <button class="btn small" data-action="sync-now" ${u.busy ? 'disabled' : ''}>Synchroniser</button>
+      <button class="btn small" data-action="sync-reveal">${u.revealed ? 'Masquer' : 'Afficher le code'}</button>
     </div>
-    <button class="btn wide ghost" data-action="sync-disable">Désactiver sur cet appareil</button>
-    <button class="btn wide ghost danger" data-action="sync-delete">Supprimer mes données du serveur</button>
+    <div class="link-stack">
+      <button class="link-btn" data-action="sync-disable">Désactiver sur cet appareil</button>
+      <button class="link-btn danger" data-action="sync-delete">Supprimer mes données du serveur</button>
+    </div>
   </section>`;
 }
 

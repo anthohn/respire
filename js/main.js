@@ -16,6 +16,7 @@ const ui = {
   tab: 'home',
   cal: 0,
   sync: { entering: false, revealed: false, busy: false, error: '', draft: '' },
+  ios: /iphone|ipad|ipod/i.test(navigator.userAgent),
   pipSupported: pipSupported(),
   linux: /linux/i.test(navigator.userAgent) && !/android/i.test(navigator.userAgent),
   canInstall: false,
@@ -491,7 +492,7 @@ const actions = {
     ui.sync.busy = false;
     refreshSettings();
     // Le code vient d'être créé : on propose tout de suite de l'enregistrer dans le gestionnaire de mots de passe.
-    if (state.sync) requestAnimationFrame(() => document.querySelector('form[data-form="sync-save"]')?.requestSubmit());
+    if (state.sync && !ui.ios) requestAnimationFrame(() => document.querySelector('form[data-form="sync-save"]')?.requestSubmit());
   },
   'sync-enter'() {
     ui.sync.entering = true;
@@ -696,7 +697,7 @@ async function saveToPasswordManager() {
   } catch {
     /* on retombe sur le message ci-dessous */
   }
-  toast('Ton gestionnaire de mots de passe devrait te proposer d’enregistrer le code. Sinon, copie-le.');
+  toast(ui.ios ? 'Copie le code, puis ajoute-le dans l’app Mots de passe.' : 'Ton gestionnaire de mots de passe devrait te proposer d’enregistrer le code. Sinon, copie-le.');
 }
 
 document.addEventListener('change', (e) => {
