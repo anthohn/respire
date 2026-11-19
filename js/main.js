@@ -8,6 +8,7 @@ import { homeView, progressView, settingsView, sheetView, doneView, onboardingVi
 import { Session } from './session.js';
 import { pipSupported } from './pip.js';
 import { Aura } from './aura.js';
+import { Sound, scheduleDemo } from './audio.js';
 
 let state = load();
 const ui = {
@@ -63,6 +64,35 @@ function render({ animate = true, keepScroll = false } = {}) {
   });
   window.scrollTo(0, keepScroll ? scroll : 0);
   if (ui.tab === 'home') mountHero();
+}
+
+// ---------- Aperçu du son ----------
+
+let preview = null;
+
+function stopPreview() {
+  if (!preview) return;
+  const { sound } = preview;
+  preview = null;
+  sound.ctx?.close().catch(() => {});
+}
+
+/** Joue environ une respiration complète avec l'ambiance choisie. À appeler depuis un clic. */
+async function previewSound() {
+  stopPreview();
+  const sound = new Sound();
+  sound.setMode(state.settings.soundMode);
+  preview = { sound };
+  if (!(await sound.unlock())) {
+    stopPreview();
+    toast('Le son n’est pas disponible sur cet appareil.');
+    return;
+  }
+  const seconds = 12;
+  scheduleDemo(sound, getPreset(state.settings.presetId), seconds, sound.ctx.currentTime + 0.05);
+  setTimeout(() => {
+    if (preview && preview.sound === sound) stopPreview();
+  }, (seconds + 3) * 1000);
 }
 
 // ---------- Bulle de l'accueil ----------
@@ -186,6 +216,7 @@ function startSession() {
     preset,
     minutes: state.settings.minutes,
     sound: state.settings.sound,
+    soundMode: state.settings.soundMode,
     haptics: state.settings.haptics,
     pipAuto: state.settings.pipAuto && ui.pipSupported,
     onNotice: toast,
@@ -378,6 +409,13 @@ const actions = {
     save(state);
     render({ animate: false, keepScroll: true });
   },
+  'set-sound-mode'(el) {
+    state.settings.soundMode = el.dataset.mode;
+    save(state);
+    render({ animate: false, keepScroll: true });
+    previewSound();
+  },
+  'preview-sound': () => previewSound(),
   'set-theme'(el) {
     state.settings.theme = el.dataset.theme;
     save(state);
@@ -462,6 +500,10 @@ document.addEventListener('change', (e) => {
   if (t.dataset.pref) {
     state.settings[t.dataset.pref] = t.checked;
     save(state);
+    if (t.dataset.pref === 'sound') {
+      if (!t.checked) stopPreview();
+      if (ui.tab === 'settings') render({ animate: false, keepScroll: true });
+    }
   } else if (t.dataset.input === 'reminder') {
     state.settings.reminder = t.value || '08:00';
     save(state);

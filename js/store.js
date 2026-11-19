@@ -12,6 +12,7 @@ const defaults = () => ({
     presetId: 'long',
     minutes: 5,
     sound: false,
+    soundMode: 'souffle',
     haptics: true,
     pipAuto: false,
     theme: 'auto',

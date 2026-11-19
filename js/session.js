@@ -36,6 +36,7 @@ export class Session {
     this.soundOn = opts.sound;
     this.hapticsOn = opts.haptics;
     this.sound = new Sound();
+    this.sound.setMode(opts.soundMode);
     this.mode = 'intro'; // intro | run | paused | done
     this.elapsed = 0;
     this.intro = INTRO_SECONDS;
@@ -141,7 +142,7 @@ export class Session {
     this.root.removeEventListener('click', this.onClick);
     document.removeEventListener('keydown', this.onKey);
     document.removeEventListener('visibilitychange', this.onVisibility);
-    this.sound.stopPad();
+    this.sound.stop();
     const ctx = this.sound.ctx;
     if (ctx) setTimeout(() => ctx.close().catch(() => {}), 1500);
     try {
@@ -265,8 +266,8 @@ export class Session {
     this.runStart = performance.now() - this.elapsed * 1000;
     this.root.classList.add('running');
     if (this.soundOn && this.sound.ctx) {
-      this.sound.startPad();
-      this.sound.chime(392, 0.08);
+      this.sound.start();
+      this.sound.chime(392, 0.07);
     }
   }
 
@@ -312,6 +313,7 @@ export class Session {
     this.setHint(hints[p.cycle % hints.length]);
     if (p.phase === 'inhale') this.aura?.pulse(1);
     else if (p.phase === 'exhale') this.aura?.pulse(-1);
+    if (this.soundOn) this.sound.cue(p.phase, p.cycle);
     if (this.hapticsOn) {
       if (p.phase === 'inhale') vibrate(38);
       else if (p.phase === 'exhale') vibrate(22);
@@ -469,10 +471,10 @@ export class Session {
         this.soundOn = false;
         this.syncToggles();
       } else if (this.mode === 'run') {
-        this.sound.startPad();
+        this.sound.start();
       }
     } else {
-      this.sound.stopPad();
+      this.sound.stop();
     }
     this.opts.onPrefs({ sound: this.soundOn, haptics: this.hapticsOn });
   }
@@ -491,7 +493,7 @@ export class Session {
     this.elapsed = Math.min(this.total, (performance.now() - this.runStart) / 1000);
     this.mode = 'paused';
     this.root.classList.add('paused');
-    this.sound.stopPad();
+    this.sound.stop();
     const btn = this.inner.querySelector('[data-el="toggle"]');
     btn.innerHTML = icon.play(26);
     btn.setAttribute('aria-label', 'Reprendre');
@@ -513,7 +515,7 @@ export class Session {
     btn.setAttribute('aria-label', 'Pause');
     if (this.soundOn && this.sound.ctx) {
       this.sound.unlock().then(() => {
-        if (this.mode === 'run') this.sound.startPad();
+        if (this.mode === 'run') this.sound.start();
       });
     }
   }
@@ -577,7 +579,7 @@ export class Session {
   end() {
     this.mode = 'done';
     this.stopTicker();
-    this.sound.stopPad();
+    this.sound.stop();
     try {
       this.wake?.release();
     } catch {
