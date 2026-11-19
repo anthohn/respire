@@ -584,13 +584,13 @@ export class Session {
            <p>Tu as respiré ${formatDuration(this.elapsed)}. Cette session peut être enregistrée.</p>
            <button class="cta" data-s="save">Enregistrer et terminer</button>
            <button class="btn ghost wide" data-s="resume">Reprendre</button>
-           <button class="link-btn" data-s="discard">Quitter sans enregistrer</button>
+           <button class="link-btn danger" data-s="discard">Quitter sans enregistrer</button>
          </div>`
       : `<div class="confirm-card">
            <h3>Quitter la session ?</h3>
            <p>Moins d’une minute ne compte pas dans ta série. Encore un petit effort, ça vaut le coup.</p>
            <button class="cta" data-s="resume">Reprendre</button>
-           <button class="link-btn" data-s="discard">Quitter</button>
+           <button class="link-btn danger" data-s="discard">Quitter</button>
          </div>`;
     box.hidden = false;
     this.confirming = true;

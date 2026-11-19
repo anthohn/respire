@@ -779,6 +779,10 @@ const actions = {
   },
 };
 
+// Le contour de focus n'est utile qu'au clavier : un toucher ou un clic ne doit pas en laisser un (voir le CSS).
+document.addEventListener('pointerdown', () => { document.documentElement.dataset.input = 'pointer'; }, true);
+document.addEventListener('keydown', () => { document.documentElement.dataset.input = 'key'; }, true);
+
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-action]');
   if (!el || el.disabled) return;
