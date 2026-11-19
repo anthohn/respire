@@ -1,7 +1,9 @@
 // Session de respiration plein écran : intro, respiration guidée, pause, fin.
 // Sur ordinateur elle continue en arrière-plan et peut passer dans une fenêtre flottante.
 
-import { createSound, vibrate } from './audio.js';
+import { vibrate } from './audio.js';
+import { Guide } from './guide.js';
+import { LEAD } from './track.js';
 import { phaseAt, breathAt, sessionPlan, patternLabel, cycleLength } from './breath.js';
 import { HINTS, PHASE_LABEL, POSTURE } from './content.js';
 import { formatClock, formatDuration, MIN_SECONDS } from './stats.js';
@@ -10,7 +12,7 @@ import { orb, esc } from './views.js';
 import { isDesktop, pipSupported, openPipWindow } from './pip.js';
 import { Aura } from './aura.js';
 
-const INTRO_SECONDS = 4.5;
+const INTRO_SECONDS = LEAD; // l'introduction de la session est l'installation de la piste audio
 const SCALE_MIN = 0.56;
 /** Un trou plus long entre deux « tops » = ordinateur en veille ou onglet gelé : ce temps ne compte pas. */
 const SLEEP_GAP_MS = 3000;
@@ -34,16 +36,8 @@ export class Session {
     this.cycles = plan.cycles;
     this.soundOn = opts.sound;
     this.hapticsOn = opts.haptics;
-    this.sound = createSound();
-    this.sound.setMode(opts.soundMode);
-    this.sound.setVolume(opts.soundVolume);
-    // Le lecteur de secours peut se voir refuser la lecture plus tard : on le dit au lieu de rester muet.
-    this.sound.onFail = (reason) => {
-      this.soundOn = false;
-      this.syncToggles();
-      this.opts.onNotice?.(`Le son s’est arrêté (${reason}).`);
-      this.opts.onPrefs({ sound: false, haptics: this.hapticsOn });
-    };
+    this.guide = null; // le guidage sonore (piste audio) : quand il joue, c'est lui qui donne l'heure
+    this.holdClock = false; // le temps attend le départ de la piste, pour qu'elle commence à zéro
     this.mode = 'intro'; // intro | run | paused | done
     this.elapsed = 0;
     this.intro = INTRO_SECONDS;
@@ -52,7 +46,6 @@ export class Session {
     this.lastStep = 0;
     this.phase = '';
     this.cycleNo = -1;
-    this.lastBreath = -1;
     this.shown = {};
     this.wake = null;
     this.raf = 0;
@@ -106,8 +99,9 @@ export class Session {
     };
     this.onVisibility = () => {
       if (document.hidden) {
-        // Sur téléphone, l'écran verrouillé fige tout : on met en pause. Sur ordinateur, on continue.
-        if (this.mode === 'run' && !this.desktop && !this.pipWin) this.pause();
+        // Sur téléphone, l'écran verrouillé fige tout : on met en pause, sauf si le son joue (il continue et reste juste).
+        // Sur ordinateur, on continue.
+        if (this.mode === 'run' && !this.desktop && !this.pipWin && !this.guideLive()) this.pause();
       } else if (this.mode === 'run' || this.mode === 'paused') {
         this.acquireWakeLock();
       }
@@ -117,8 +111,8 @@ export class Session {
     document.addEventListener('keydown', this.onKey);
     document.addEventListener('visibilitychange', this.onVisibility);
 
-    // Doit rester synchrone avec le clic de l'utilisateur pour débloquer l'audio.
-    if (this.soundOn) this.sound.unlock();
+    // Doit rester synchrone avec le clic de l'utilisateur : la lecture n'est autorisée qu'après un geste.
+    if (this.soundOn) this.startGuide(true);
     this.acquireWakeLock();
     if (this.opts.pipAuto && this.canPip) this.openPip();
 
@@ -147,9 +141,7 @@ export class Session {
     this.root.removeEventListener('click', this.onClick);
     document.removeEventListener('keydown', this.onKey);
     document.removeEventListener('visibilitychange', this.onVisibility);
-    this.sound.stop();
-    const ctx = this.sound.ctx;
-    if (ctx) setTimeout(() => ctx.close().catch(() => {}), 1500);
+    this.guide?.destroy();
     try {
       this.wake?.release();
     } catch {
@@ -173,7 +165,7 @@ export class Session {
         <button class="icon-btn" data-s="close" aria-label="Quitter la session">${icon.close(22)}</button>
         <p class="s-preset">${esc(p.name)}<span>${patternLabel(p)}</span></p>
         <div class="s-toggles">
-          <button class="icon-btn ${this.soundOn ? 'on' : ''}" data-s="sound" aria-pressed="${this.soundOn}" aria-label="Son doux">${this.soundOn ? icon.volume(22) : icon.volumeOff(22)}</button>
+          <button class="icon-btn ${this.soundOn ? 'on' : ''}" data-s="sound" aria-pressed="${this.soundOn}" aria-label="Son">${this.soundOn ? icon.volume(22) : icon.volumeOff(22)}</button>
           ${this.canVibrate ? `<button class="icon-btn ${this.hapticsOn ? 'on' : ''}" data-s="haptics" aria-pressed="${this.hapticsOn}" aria-label="Vibrations">${icon.vibrate(22)}</button>` : ''}
           ${this.canPip ? `<button class="icon-btn" data-s="pip" aria-pressed="false" aria-label="Fenêtre flottante" title="Fenêtre flottante : continue à respirer pendant que tu travailles">${icon.pip(22)}</button>` : ''}
         </div>
@@ -242,11 +234,13 @@ export class Session {
     }
     const gap = now - this.lastStep;
     this.lastStep = now;
+    if (this.holdClock) return; // on attend le départ de la piste
     if (this.confirming) {
-      if (this.mode === 'intro') this.introEnd += gap; // la confirmation fige aussi l'intro
+      if (this.mode === 'intro' && !this.guideOn()) this.introEnd += gap; // la confirmation fige aussi l'intro
       return;
     }
-    if (gap > SLEEP_GAP_MS) {
+    if (!this.guideOn() && gap > SLEEP_GAP_MS) {
+      // Sans piste audio, un trou long entre deux « tops » = ordinateur en veille ou onglet gelé : ce temps ne compte pas.
       const lost = gap - 250;
       this.introEnd += lost;
       this.runStart += lost;
@@ -255,8 +249,18 @@ export class Session {
     else if (this.mode === 'run') this.tickRun(now);
   }
 
+  /** La piste audio donne l'heure tant qu'elle existe (elle reste juste écran verrouillé, en pause ou en arrière-plan). */
+  guideOn() {
+    return !!this.guide?.active;
+  }
+
+  /** Vrai si le son est en train de jouer pour de bon : alors l'écran peut se verrouiller sans interrompre la session. */
+  guideLive() {
+    return this.guideOn() && !this.guide.paused && !this.guide.muted;
+  }
+
   tickIntro(now) {
-    this.intro = (this.introEnd - now) / 1000;
+    this.intro = this.guideOn() ? INTRO_SECONDS - this.guide.time : (this.introEnd - now) / 1000;
     const step = Math.min(POSTURE.length - 1, Math.floor(((INTRO_SECONDS - this.intro) / INTRO_SECONDS) * POSTURE.length));
     this.setHint(POSTURE[Math.max(0, step)]);
     if (this.intro <= 0) this.startRun();
@@ -266,19 +270,67 @@ export class Session {
     this.mode = 'run';
     this.runStart = performance.now() - this.elapsed * 1000;
     this.root.classList.add('running');
-    if (this.soundOn && this.sound.ctx) {
-      this.sound.start();
-      this.sound.chime('start');
-    }
   }
 
   tickRun(now) {
-    this.elapsed = (now - this.runStart) / 1000;
+    this.elapsed = this.guideOn() ? Math.max(0, this.guide.time - INTRO_SECONDS) : (now - this.runStart) / 1000;
     if (this.elapsed >= this.total) {
       this.complete();
       return;
     }
     this.render(this.elapsed);
+  }
+
+  // ---------- Guidage sonore ----------
+
+  /** Fabrique la piste et la lance. `fromStart` : au début de la session (le temps attend) ; sinon on rejoint la position actuelle. */
+  startGuide(fromStart = false) {
+    if (this.guide) return;
+    const g = (this.guide = new Guide({
+      preset: this.preset,
+      cycles: this.cycles,
+      style: this.opts.soundStyle,
+      muted: !this.soundOn,
+      // Pause ou reprise venues d'ailleurs : écran de verrouillage, voiture, appel, écouteurs débranchés.
+      onPause: () => {
+        if (this.mode === 'run') this.pause();
+      },
+      onPlay: () => {
+        if (this.mode === 'paused' && !this.confirmOpen) this.resume();
+      },
+      // Les événements du lecteur continuent quand l'affichage est gelé : ils font avancer la session.
+      onTime: () => this.step(performance.now()),
+      onEnded: () => {
+        if (this.mode === 'run' || this.mode === 'paused') this.complete();
+      },
+      onFail: (reason, wasActive) => this.guideFailed(reason, wasActive),
+    }));
+    this.holdClock = fromStart;
+    g.unlock();
+    g.start(() => this.sessionTime()).then((ok) => {
+      if (this.guide !== g) return;
+      if (ok) this.holdClock = false;
+      this.syncToggles();
+    });
+  }
+
+  /** Position dans la piste (installation comprise) qui correspond à l'état actuel de la session. */
+  sessionTime() {
+    return this.mode === 'intro' ? INTRO_SECONDS - this.intro : INTRO_SECONDS + this.elapsed;
+  }
+
+  /** Le son n'a pas pu démarrer (ou s'est arrêté) : la session continue sans lui, à l'heure de l'horloge. */
+  guideFailed(reason, wasActive) {
+    this.guide = null;
+    this.holdClock = false;
+    this.soundOn = false;
+    const now = performance.now();
+    if (this.mode === 'intro') this.introEnd = now + this.intro * 1000;
+    this.runStart = now - this.elapsed * 1000;
+    this.lastStep = now;
+    this.syncToggles();
+    // Un échec ponctuel ne change pas ton réglage : la prochaine session réessaie.
+    this.opts.onNotice?.(`${wasActive ? 'Le son s’est arrêté' : 'Le son n’a pas pu démarrer'} (${reason}).`);
   }
 
   render(t) {
@@ -294,10 +346,6 @@ export class Session {
     // Le titre de l'onglet suit la session : on la voit même quand l'onglet est caché.
     this.setTitle(`${PHASE_LABEL[p.phase]} · ${formatClock(this.total - t)}`);
 
-    if (this.soundOn && Math.abs(p.breath - this.lastBreath) > 0.008) {
-      this.sound.update(p.breath);
-      this.lastBreath = p.breath;
-    }
   }
 
   onPhase(p) {
@@ -313,7 +361,6 @@ export class Session {
     this.setHint(hints[p.cycle % hints.length]);
     if (p.phase === 'inhale') this.aura?.pulse(1);
     else if (p.phase === 'exhale') this.aura?.pulse(-1);
-    if (this.soundOn) this.sound.cue(p.phase, p.cycle);
     if (this.hapticsOn) {
       if (p.phase === 'inhale') vibrate(38);
       else if (p.phase === 'exhale') vibrate(22);
@@ -428,12 +475,18 @@ export class Session {
   act(name) {
     switch (name) {
       case 'toggle':
-        if (this.mode === 'intro') this.startRun();
-        else if (this.mode === 'run') this.pause();
+        if (this.mode === 'intro') {
+          if (this.guideOn()) this.guide.seek(INTRO_SECONDS); // on saute l'installation, le son aussi
+          this.startRun();
+        } else if (this.mode === 'run') this.pause();
         else if (this.mode === 'paused' && !this.confirmOpen) this.resume();
         break;
       case 'close': this.requestClose(); break;
-      case 'resume': this.hideConfirm(); this.resume(); break;
+      case 'resume':
+        this.hideConfirm();
+        if (this.mode === 'intro' && this.guideOn()) this.guide.play();
+        else this.resume();
+        break;
       case 'save': this.finishEarly(); break;
       case 'discard': this.destroy(); break;
       case 'sound': this.toggleSound(); break;
@@ -462,21 +515,12 @@ export class Session {
     }
   }
 
-  async toggleSound() {
+  /** Le bouton son : coupe ou rétablit le son, sans toucher à la session (la piste continue en silence). */
+  toggleSound() {
     this.soundOn = !this.soundOn;
+    if (this.guide) this.guide.muted = !this.soundOn;
+    else if (this.soundOn && this.mode !== 'done') this.startGuide(false); // session lancée sans son : on le rejoint maintenant
     this.syncToggles();
-    if (this.soundOn) {
-      const ok = await this.sound.unlock();
-      if (!ok) {
-        this.soundOn = false;
-        this.syncToggles();
-        this.opts.onNotice?.(`Le son n’a pas pu démarrer sur cet appareil (${this.sound.lastError || 'raison inconnue'}).`);
-      } else if (this.mode === 'run') {
-        this.sound.start();
-      }
-    } else {
-      this.sound.stop();
-    }
     this.opts.onPrefs({ sound: this.soundOn, haptics: this.hapticsOn });
   }
 
@@ -494,10 +538,10 @@ export class Session {
 
   pause() {
     if (this.mode !== 'run') return;
-    this.elapsed = Math.min(this.total, (performance.now() - this.runStart) / 1000);
+    this.elapsed = Math.min(this.total, this.guideOn() ? Math.max(0, this.guide.time - INTRO_SECONDS) : (performance.now() - this.runStart) / 1000);
     this.mode = 'paused';
     this.root.classList.add('paused');
-    this.sound.stop();
+    this.guide?.pause();
     const btn = this.inner.querySelector('[data-el="toggle"]');
     btn.innerHTML = icon.play(26);
     btn.setAttribute('aria-label', 'Reprendre');
@@ -517,11 +561,7 @@ export class Session {
     const btn = this.inner.querySelector('[data-el="toggle"]');
     btn.innerHTML = icon.pause(26);
     btn.setAttribute('aria-label', 'Pause');
-    if (this.soundOn && this.sound.ctx) {
-      this.sound.unlock().then(() => {
-        if (this.mode === 'run') this.sound.start();
-      });
-    }
+    this.guide?.play();
   }
 
   get confirmOpen() {
@@ -531,6 +571,7 @@ export class Session {
   requestClose() {
     if (this.mode === 'done') return;
     if (this.mode === 'run') this.pause();
+    else if (this.mode === 'intro' && this.guideOn()) this.guide.pause();
     const box = this.inner.querySelector('[data-el="confirm"]');
     const enough = this.elapsed >= MIN_SECONDS;
     box.innerHTML = enough
@@ -581,13 +622,9 @@ export class Session {
   end(withChime = false) {
     this.mode = 'done';
     this.stopTicker();
-    if (withChime && this.soundOn && this.sound.g) {
-      // Repère de fin : on laisse le son se terminer avant de tout éteindre.
-      this.sound.chime('end');
-      this.sound.stop(this.sound.ctx.currentTime + 4.5);
-    } else {
-      this.sound.stop();
-    }
+    // Fin complète : la retombée de la piste (le geste de fin) finit de sonner. Sortie anticipée : on coupe.
+    if (withChime) this.guide?.finish();
+    else this.guide?.destroy();
     try {
       this.wake?.release();
     } catch {

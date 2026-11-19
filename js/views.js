@@ -7,7 +7,6 @@ import {
 } from './stats.js';
 import { DAY_LETTERS, MONTHS, FEELINGS, greeting, moment } from './content.js';
 import { journeyLayout, STEPS } from './journey.js';
-import { SOUND_MODES } from './audio.js';
 import { GUIDE_STYLES } from './track.js';
 import { formatCode } from './sync.js';
 
@@ -124,7 +123,7 @@ export function homeView(c) {
     <button class="hero-orb" data-action="start" aria-label="Commencer une session">${orb('idle')}</button>
     <button class="hero-hint" data-action="start" tabindex="-1" aria-hidden="true">Touche la bulle pour respirer</button>
     <button class="session-chip" data-action="open-sheet" aria-label="Modifier la session : ${esc(preset.name)}, ${patternLabel(preset)}, ${minutes} minutes">
-      <span>${state.settings.audioMode ? `${icon.headphones(15)} ` : ''}<b>${esc(preset.name)}</b> <i>·</i> ${patternLabel(preset)} <i>·</i> ${minutes} min</span>${icon.settings(16)}
+      <span><b>${esc(preset.name)}</b> <i>·</i> ${patternLabel(preset)} <i>·</i> ${minutes} min</span>${icon.settings(16)}
     </button>
   </section>
 
@@ -396,30 +395,16 @@ export function settingsView(c) {
 
   <section class="card list rise">
     <p class="list-title">Pendant la session</p>
-    ${toggle('sound', s.sound, 'Repères sonores', 'Très discrets : le son monte quand tu inspires, descend quand tu expires')}
+    ${toggle('sound', s.sound, 'Son', 'Une piste douce guide ton souffle. Elle continue si tu verrouilles ton téléphone : écouteurs, Bluetooth, voiture.')}
     ${s.sound ? `<div class="row stack">
-      <span class="row-text"><b>Ambiance</b><small>${esc((SOUND_MODES.find((m) => m.id === s.soundMode) || SOUND_MODES[0]).blurb)}</small></span>
-      ${seg(SOUND_MODES.map((m) => [m.id, m.name]), s.soundMode, 'set-sound-mode', 'mode')}
+      <span class="row-text"><b>Guidage</b><small>${esc((GUIDE_STYLES.find((g) => g.id === s.soundStyle) || GUIDE_STYLES[0]).blurb)}</small></span>
+      ${seg(GUIDE_STYLES.map((g) => [g.id, g.name]), s.soundStyle, 'set-sound-style', 'style')}
       <button class="btn wide ghost" data-action="preview-sound">${icon.volume(18)} Écouter un aperçu</button>
     </div>
-    <div class="row stack">
-      <span class="row-text"><b>Volume</b><small>Règle-le pour qu’il reste juste audible derrière ton travail.</small></span>
-      <span class="range-row"><input class="range" type="range" min="0" max="100" step="5" value="${s.soundVolume}" data-input="volume" aria-label="Volume des repères sonores" /><b class="vol-val">${s.soundVolume} %</b></span>
-    </div>` : ''}
+    <p class="fine left">Le volume se règle avec les boutons de ton téléphone. En voiture, lance la séance à l’arrêt et évite les rythmes avec une pause (4-7-8, Calme profond) : ils détendent beaucoup.</p>` : ''}
     ${toggle('haptics', s.haptics, 'Vibrations', 'Une légère impulsion à chaque changement de phase')}
     ${ui.pipSupported ? toggle('pipAuto', s.pipAuto, 'Fenêtre flottante', 'Ouvre la session dans une petite fenêtre toujours visible : tu respires pendant que tu travailles') : ''}
     ${ui.pipSupported && ui.linux ? '<p class="fine left">Sous GNOME (Wayland), le navigateur ne peut pas la garder au premier plan. L’extension « PiP on top » le fait, mais seulement quand Respire est ouverte dans un onglet du navigateur, pas dans l’application installée.</p>' : ''}
-  </section>
-
-  <section class="card list rise">
-    <p class="list-title">Mode audio</p>
-    ${toggle('audioMode', s.audioMode, 'Écouter, écran éteint', 'Une séance sonore : elle continue écran verrouillé, avec des écouteurs ou en Bluetooth')}
-    <div class="row stack">
-      <span class="row-text"><b>Guidage</b><small>${esc((GUIDE_STYLES.find((g) => g.id === s.audioStyle) || GUIDE_STYLES[0]).blurb)}</small></span>
-      ${seg(GUIDE_STYLES.map((g) => [g.id, g.name]), s.audioStyle, 'set-audio-style', 'style')}
-      <button class="btn wide ghost" data-action="preview-audio">${icon.headphones(18)} Écouter un aperçu</button>
-    </div>
-    <p class="fine left">En voiture, lance la séance à l’arrêt et laisse l’écran éteint. Évite les rythmes avec une pause (4-7-8, Calme profond) : ils détendent beaucoup.</p>
   </section>
 
   <section class="card list rise">
@@ -495,14 +480,10 @@ export function sheetView(c, { dir = 0 } = {}) {
     <div class="seg big" role="radiogroup" aria-label="Durée">
       ${DURATIONS.map((d) => `<button role="radio" aria-checked="${d === s.minutes}" class="${d === s.minutes ? 'on' : ''}" data-action="pick-minutes" data-min="${d}">${d} min</button>`).join('')}
     </div>
-    <div class="seg mode-seg" role="radiogroup" aria-label="Mode">
-      <button role="radio" aria-checked="${!s.audioMode}" class="${s.audioMode ? '' : 'on'}" data-action="set-audio-mode" data-mode="screen">Écran</button>
-      <button role="radio" aria-checked="${s.audioMode}" class="${s.audioMode ? 'on' : ''}" data-action="set-audio-mode" data-mode="audio">${icon.headphones(17)} Audio</button>
-    </div>
   </div>
 
   <footer class="sheet-foot">
-    <button class="cta" data-action="start-from-sheet">${s.audioMode ? 'Écouter' : 'Commencer'} · ${formatDuration(plan.totalSeconds)}<span class="cta-ico">${icon.chevronRight(20)}</span></button>
+    <button class="cta" data-action="start-from-sheet">Commencer · ${formatDuration(plan.totalSeconds)}<span class="cta-ico">${icon.chevronRight(20)}</span></button>
   </footer>`;
 }
 

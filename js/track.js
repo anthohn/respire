@@ -10,7 +10,7 @@ import { phaseAt, cycleLength, sessionPlan } from './breath.js';
 import { renderCue, gainFor, CUES, CHIMES } from './audio.js';
 
 export const TRACK_RATE = 11025; // les sons sont doux et graves : inutile d'aller plus haut (fichier deux fois plus léger)
-export const LEAD = 6; // secondes pour s'installer avant la première inspiration
+export const LEAD = 5; // secondes pour s'installer avant la première inspiration (c'est aussi l'introduction de la session)
 export const TAIL = 5; // secondes de retombée après la dernière expiration
 
 export const GUIDE_STYLES = [

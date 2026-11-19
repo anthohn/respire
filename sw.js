@@ -1,6 +1,6 @@
 // Service worker : l'application fonctionne hors ligne une fois chargée.
 // Incrémente VERSION à chaque publication pour que les téléphones récupèrent les nouveaux fichiers.
-const VERSION = 'respire-v41';
+const VERSION = 'respire-v42';
 
 const ASSETS = [
   './',
@@ -16,7 +16,7 @@ const ASSETS = [
   './js/store.js',
   './js/audio.js',
   './js/track.js',
-  './js/audiosession.js',
+  './js/guide.js',
   './js/icons.js',
   './js/journey.js',
   './js/pip.js',

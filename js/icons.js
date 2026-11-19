@@ -27,7 +27,6 @@ export const icon = {
   pip: (s) => stroke('<rect x="3" y="5" width="18" height="14" rx="2.6"/><rect x="12" y="12" width="7" height="5" rx="1.2" fill="currentColor"/>', s),
   eye: (s) => stroke('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>', s),
   eyeOff: (s) => stroke('<path d="M3 3l18 18M10.6 5.7A9.6 9.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a16 16 0 0 1-3.2 3.9M6.4 6.9A16 16 0 0 0 2.5 12S6 18.5 12 18.5c1.6 0 3-.4 4.2-1M9.9 9.9a3 3 0 0 0 4.2 4.2"/>', s),
-  headphones: (s) => stroke('<path d="M4.5 15v-3a7.5 7.5 0 0 1 15 0v3"/><rect x="3.5" y="14.5" width="4" height="6" rx="1.6"/><rect x="16.5" y="14.5" width="4" height="6" rx="1.6"/>', s),
   leaf: (s) => stroke('<path d="M5 19c0-8 5-13.5 14-14 0 8.5-5 14-12.5 14.2"/><path d="M5 19c2-3.5 4.5-6 8-8"/>', s),
   trophy: (s) => stroke('<path d="M8 4.5h8v5a4 4 0 0 1-8 0zM8 6.5H5.5a1 1 0 0 0-1 1c0 2 1.5 3.5 3.5 3.5M16 6.5h2.5a1 1 0 0 1 1 1c0 2-1.5 3.5-3.5 3.5M12 13.5V17M8.5 20h7M10 17h4"/>', s),
   sparkle: (s) => stroke('<path d="M12 3.5v5M12 15.5v5M3.5 12h5M15.5 12h5"/>', s),

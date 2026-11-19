@@ -6,12 +6,10 @@ import { PRESETS, getPreset, phaseAt } from './breath.js';
 import { tipOfTheDay, finishMessage } from './content.js';
 import { homeView, progressView, settingsView, sheetView, doneView, onboardingView } from './views.js';
 import { Session } from './session.js';
-import { AudioSession } from './audiosession.js';
 import { renderTrack, wavBlob, TRACK_RATE } from './track.js';
 import { icon } from './icons.js';
 import { pipSupported } from './pip.js';
 import { Aura, readPalette } from './aura.js';
-import { createSound, scheduleDemo } from './audio.js';
 import { syncNow, enableSync, joinWithCode, deleteRemote, normalizeCode, formatCode, SyncError, SYNC_MESSAGES } from './sync.js';
 
 let state = load();
@@ -72,37 +70,7 @@ function render({ animate = true, keepScroll = false } = {}) {
   if (ui.tab === 'home') mountHero();
 }
 
-// ---------- Aperçu du son ----------
-
-let preview = null;
-
-function stopPreview() {
-  if (!preview) return;
-  const { sound } = preview;
-  preview = null;
-  sound.ctx?.close().catch(() => {});
-}
-
-/** Joue environ une respiration complète avec l'ambiance choisie. À appeler depuis un clic. */
-async function previewSound() {
-  stopPreview();
-  const sound = createSound();
-  sound.setMode(state.settings.soundMode);
-  sound.setVolume(state.settings.soundVolume);
-  preview = { sound };
-  if (!(await sound.unlock())) {
-    stopPreview();
-    toast('Le son n’est pas disponible sur cet appareil.');
-    return;
-  }
-  const seconds = 12;
-  scheduleDemo(sound, getPreset(state.settings.presetId), seconds, sound.ctx.currentTime + 0.05);
-  setTimeout(() => {
-    if (preview && preview.sound === sound) stopPreview();
-  }, (seconds + 3) * 1000);
-}
-
-// ---------- Aperçu du guidage audio ----------
+// ---------- Aperçu du guidage sonore ----------
 
 let guidePreview = null;
 
@@ -134,7 +102,7 @@ async function previewGuide() {
   } catch (e) {
     return fail(e);
   }
-  const { pcm, rate } = await renderTrack({ preset: getPreset(state.settings.presetId), cycles: 1, lead: 1, tail: 2, style: state.settings.audioStyle });
+  const { pcm, rate } = await renderTrack({ preset: getPreset(state.settings.presetId), cycles: 1, lead: 1, tail: 2, style: state.settings.soundStyle });
   if (guidePreview !== me) return;
   const url = URL.createObjectURL(wavBlob(pcm, rate));
   me.urls.push(url);
@@ -383,15 +351,12 @@ function closeSheet({ instant = false } = {}) {
 function startSession() {
   if (session) return;
   const preset = getPreset(state.settings.presetId);
-  const Mode = state.settings.audioMode ? AudioSession : Session;
   stopGuidePreview();
-  session = new Mode(sessionEl, {
+  session = new Session(sessionEl, {
     preset,
-    audioStyle: state.settings.audioStyle,
     minutes: state.settings.minutes,
     sound: state.settings.sound,
-    soundMode: state.settings.soundMode,
-    soundVolume: state.settings.soundVolume,
+    soundStyle: state.settings.soundStyle,
     haptics: state.settings.haptics,
     pipAuto: state.settings.pipAuto && ui.pipSupported,
     onNotice: toast,
@@ -634,25 +599,13 @@ const actions = {
     scheduleSync();
     render({ animate: false, keepScroll: true });
   },
-  'set-sound-mode'(el) {
-    state.settings.soundMode = el.dataset.mode;
-    save(state);
-    render({ animate: false, keepScroll: true });
-    previewSound();
-  },
-  'preview-sound': () => previewSound(),
-  'preview-audio': () => previewGuide(),
-  'set-audio-style'(el) {
-    state.settings.audioStyle = el.dataset.style;
+  'set-sound-style'(el) {
+    state.settings.soundStyle = el.dataset.style;
     save(state);
     render({ animate: false, keepScroll: true });
     previewGuide();
   },
-  'set-audio-mode'(el) {
-    state.settings.audioMode = el.dataset.mode === 'audio';
-    save(state);
-    refreshSheet();
-  },
+  'preview-sound': () => previewGuide(),
   'set-theme'(el) {
     state.settings.theme = el.dataset.theme;
     save(state);
@@ -880,13 +833,9 @@ document.addEventListener('change', (e) => {
     state.settings[t.dataset.pref] = t.checked;
     save(state);
     if (t.dataset.pref === 'sound') {
-      if (!t.checked) stopPreview();
+      if (!t.checked) stopGuidePreview();
       if (ui.tab === 'settings') render({ animate: false, keepScroll: true });
     }
-  } else if (t.dataset.input === 'volume') {
-    state.settings.soundVolume = Number(t.value);
-    save(state);
-    previewSound(); // on entend tout de suite le nouveau volume
   } else if (t.dataset.input === 'reminder') {
     state.settings.reminder = t.value || '08:00';
     save(state);
@@ -895,10 +844,7 @@ document.addEventListener('change', (e) => {
 
 document.addEventListener('input', (e) => {
   const t = e.target;
-  if (t.dataset.input === 'volume') {
-    const label = t.closest('.range-row')?.querySelector('.vol-val');
-    if (label) label.textContent = `${t.value} %`;
-  } else if (t.dataset.input === 'name') {
+  if (t.dataset.input === 'name') {
     state.name = t.value.trim();
     touchPrefs();
     save(state);

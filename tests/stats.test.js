@@ -144,25 +144,6 @@ test('ascension : le marqueur suit la série', () => {
   assert.equal(summit.done, summit.full);
 });
 
-import { Sound } from '../js/audio.js';
-
-test('son : aucune méthode ne plante tant que le son n’a jamais été activé', () => {
-  // Régression : le son est désactivé par défaut, donc sans horloge audio ; pause, quitter et fin de session appellent stop().
-  const s = new Sound();
-  assert.doesNotThrow(() => {
-    s.stop();
-    s.stop(3);
-    s.update(0.5);
-    s.cue('inhale', 2);
-    s.chime('start');
-    s.chime('end', 1);
-    s.setVolume(40);
-    s.setMode('bulle');
-    s.start();
-  });
-  assert.equal(s.g, null);
-});
-
 test('4-7-8 : inspire 4, retiens 7, expire 8', () => {
   const p = PRESETS.find((x) => x.id === '478');
   assert.ok(p);
@@ -192,7 +173,7 @@ test('rythmes : 4 au choix, et un rythme retiré retombe sur le recommandé', ()
   assert.equal(getPreset('478').id, '478');
 });
 
-import { renderCue, encodeWav, ElementSound, createSound, SAMPLE_RATE } from '../js/audio.js';
+import { renderCue, SAMPLE_RATE } from '../js/audio.js';
 
 // Fréquence autour de l'instant t (en s), par passages à zéro.
 const freqAt = (x, t, w = 0.1) => {
@@ -205,14 +186,14 @@ const freqAt = (x, t, w = 0.1) => {
 const GLISSE_IN = ['glide', 330, 494, 1.3, 0.06, 2000];
 const GLISSE_OUT = ['glide', 440, 294, 1.7, 0.05, 1300];
 
-test('secours audio : l’inspiration monte, l’expiration descend', () => {
+test('repères : l’inspiration monte, l’expiration descend', () => {
   const up = renderCue(GLISSE_IN, 60);
   assert.ok(freqAt(up, 1.0) > freqAt(up, 0.2) + 60, `monte : ${freqAt(up, 0.2)} → ${freqAt(up, 1.0)} Hz`);
   const down = renderCue(GLISSE_OUT, 60);
   assert.ok(freqAt(down, 0.2) > freqAt(down, 1.3) + 60, `descend : ${freqAt(down, 0.2)} → ${freqAt(down, 1.3)} Hz`);
 });
 
-test('secours audio : discret, sans claquement, qui commence et finit dans le silence', () => {
+test('repères : discrets, sans claquement, qui commence et finit dans le silence', () => {
   for (const spec of [GLISSE_IN, GLISSE_OUT, ['bubble', 300, 640, 0.17, 0.08], ['glide', 392, 262, 2.6, 0.05, 1200]]) {
     const x = renderCue(spec, 100);
     const peak = Math.max(...x.map(Math.abs));
@@ -229,34 +210,26 @@ test('secours audio : discret, sans claquement, qui commence et finit dans le si
   assert.ok(loud > quiet * 1.5, 'le volume joue sur le niveau (iOS ignore le volume des éléments audio)');
 });
 
-test('secours audio : fichier WAV valide', () => {
-  const x = renderCue(GLISSE_IN, 60);
-  const wav = encodeWav(x);
-  const view = new DataView(wav.buffer);
-  const text = (o, n) => String.fromCharCode(...wav.slice(o, o + n));
-  assert.equal(text(0, 4), 'RIFF');
-  assert.equal(text(8, 4), 'WAVE');
-  assert.equal(text(36, 4), 'data');
-  assert.equal(wav.length, 44 + x.length * 2);
-  assert.equal(view.getUint32(24, true), SAMPLE_RATE);
-  assert.equal(view.getUint16(22, true), 1, 'mono');
-  assert.equal(view.getUint16(34, true), 16, '16 bits');
-  assert.equal(view.getUint32(40, true), x.length * 2);
-  for (const i of [0, 1000, 5000, x.length - 1]) assert.ok(Math.abs(view.getInt16(44 + i * 2, true) / 32767 - x[i]) < 1e-4);
-});
+import { load } from '../js/store.js';
 
-test('secours audio : sans lecteur audio, le bouton le dit au lieu de planter', async () => {
-  const s = createSound(); // pas de fenêtre ni de Web Audio ici : moteur de secours
-  assert.ok(s instanceof ElementSound);
-  assert.doesNotThrow(() => {
-    s.start();
-    s.cue('inhale', 0);
-    s.chime('start');
-    s.update(0.5);
-    s.setVolume(40);
-    s.setMode('bulle');
-    s.stop();
-  });
-  assert.equal(await s.unlock(), false);
-  assert.equal(s.lastError, 'son indisponible');
+const withStored = (obj) => {
+  globalThis.localStorage = { getItem: () => (obj ? JSON.stringify(obj) : null), setItem() {} };
+  return load().settings;
+};
+
+test('réglages : le guidage sonore est actif par défaut, y compris pour les anciens réglages', () => {
+  assert.equal(withStored(null).sound, true);
+  assert.equal(withStored(null).soundStyle, 'vague');
+  // Avant le guidage sonore : le son était coupé par défaut et avait d'autres réglages.
+  const old = withStored({ settings: { sound: false, soundMode: 'fil', soundVolume: 40, presetId: 'long' } });
+  assert.equal(old.sound, true);
+  assert.equal(old.soundStyle, 'vague');
+  for (const k of ['soundMode', 'soundVolume', 'audioMode', 'audioStyle']) assert.ok(!(k in old), `${k} retiré`);
+  // Le style choisi pendant la phase « mode audio » est gardé.
+  assert.equal(withStored({ settings: { audioStyle: 'nappe', audioMode: true } }).soundStyle, 'nappe');
+  // Ensuite, le choix de l'utilisateur est respecté.
+  const mine = withStored({ settings: { sound: false, soundStyle: 'reperes' } });
+  assert.equal(mine.sound, false);
+  assert.equal(mine.soundStyle, 'reperes');
+  assert.equal(withStored({ settings: { sound: true, soundStyle: 'inconnu' } }).soundStyle, 'vague');
 });

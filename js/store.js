@@ -16,13 +16,10 @@ const defaults = () => ({
     goalMin: 5,
     presetId: 'long',
     minutes: 5,
-    sound: false,
-    soundMode: 'glisse',
-    soundVolume: 60,
+    sound: true, // le guidage sonore est aussi l'horloge de la session : activé par défaut, on peut le couper en séance
+    soundStyle: DEFAULT_GUIDE,
     haptics: true,
     pipAuto: false,
-    audioMode: false, // séance sonore (écran éteint, écouteurs, Bluetooth)
-    audioStyle: DEFAULT_GUIDE,
     theme: 'auto',
     reminder: '08:00',
   },
@@ -35,10 +32,15 @@ export function load() {
     if (!raw) return base;
     const data = JSON.parse(raw);
     const settings = { ...base.settings, ...(data.settings || {}) };
-    // Anciennes ambiances (souffle, vague, carillon) : remplacées par les nouveaux repères discrets.
-    if (!['glisse', 'bulle', 'fil'].includes(settings.soundMode)) settings.soundMode = base.settings.soundMode;
+    const stored = data.settings || {};
+    // Réglages d'avant le guidage sonore : on l'active, en gardant le style déjà choisi s'il existe.
+    if (!('soundStyle' in stored)) {
+      settings.sound = true;
+      settings.soundStyle = stored.audioStyle;
+    }
+    if (!GUIDE_STYLES.some((g) => g.id === settings.soundStyle)) settings.soundStyle = DEFAULT_GUIDE;
+    for (const old of ['soundMode', 'soundVolume', 'audioMode', 'audioStyle']) delete settings[old];
     settings.presetId = getPreset(settings.presetId).id;
-    if (!GUIDE_STYLES.some((g) => g.id === settings.audioStyle)) settings.audioStyle = DEFAULT_GUIDE;
     return {
       ...base,
       ...data,
