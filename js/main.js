@@ -6,11 +6,13 @@ import { getPreset } from './breath.js';
 import { tipOfTheDay, finishMessage } from './content.js';
 import { homeView, progressView, settingsView, sheetView, doneView, onboardingView } from './views.js';
 import { Session } from './session.js';
+import { pipSupported } from './pip.js';
 
 let state = load();
 const ui = {
   tab: 'home',
   cal: 0,
+  pipSupported: pipSupported(),
   canInstall: false,
   iosHint: /iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone,
   ob: { step: 0, name: '', goal: 5 },
@@ -130,6 +132,8 @@ function startSession() {
     minutes: state.settings.minutes,
     sound: state.settings.sound,
     haptics: state.settings.haptics,
+    pipAuto: state.settings.pipAuto && ui.pipSupported,
+    onNotice: toast,
     onFinish: handleFinish,
     onPrefs: ({ sound, haptics }) => {
       state.settings.sound = sound;
@@ -187,8 +191,7 @@ function handleFinish({ seconds, cycles, completed }) {
     levelUp: levelAfter.index > levelBefore.index ? levelAfter.level : null,
     message: finishMessage({ streak: after.current, streakIncreased, goalReached, firstEver: before.sessions === 0 }),
   };
-  session.showDone(doneView(data));
-  celebrate(data);
+  session.showDone(doneView(data), () => celebrate(data));
 }
 
 function celebrate(d) {

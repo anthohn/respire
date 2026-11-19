@@ -13,6 +13,7 @@ const defaults = () => ({
     minutes: 5,
     sound: false,
     haptics: true,
+    pipAuto: false,
     theme: 'auto',
     reminder: '08:00',
   },

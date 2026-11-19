@@ -1,4 +1,5 @@
 // Session de respiration plein écran : intro, respiration guidée, pause, fin.
+// Sur ordinateur elle continue en arrière-plan et peut passer dans une fenêtre flottante.
 
 import { Sound, vibrate } from './audio.js';
 import { phaseAt, breathAt, sessionPlan, patternLabel, cycleLength } from './breath.js';
@@ -6,17 +7,21 @@ import { HINTS, PHASE_LABEL, POSTURE } from './content.js';
 import { formatClock, formatDuration, MIN_SECONDS } from './stats.js';
 import { icon } from './icons.js';
 import { orb, esc } from './views.js';
+import { isDesktop, pipSupported, openPipWindow } from './pip.js';
 
 const INTRO_SECONDS = 4.5;
 const SCALE_MIN = 0.56;
 const RING_C = 2 * Math.PI * 48.5;
+/** Un trou plus long entre deux « tops » = ordinateur en veille ou onglet gelé : ce temps ne compte pas. */
+const SLEEP_GAP_MS = 3000;
+const chevron = `<span class="cta-ico">${icon.chevronRight(20)}</span>`;
 
 export class Session {
   /**
    * @param {HTMLElement} root
-   * @param {{preset:object, minutes:number, sound:boolean, haptics:boolean,
+   * @param {{preset:object, minutes:number, sound:boolean, haptics:boolean, pipAuto?:boolean,
    *          onFinish:(r:{seconds:number,cycles:number,completed:boolean})=>void,
-   *          onPrefs:(p:{sound:boolean,haptics:boolean})=>void, onExit:()=>void}} opts
+   *          onPrefs:(p:{sound:boolean,haptics:boolean})=>void, onNotice?:(m:string)=>void, onExit:()=>void}} opts
    */
   constructor(root, opts) {
     this.root = root;
@@ -31,6 +36,9 @@ export class Session {
     this.mode = 'intro'; // intro | run | paused | done
     this.elapsed = 0;
     this.intro = INTRO_SECONDS;
+    this.introEnd = 0;
+    this.runStart = 0;
+    this.lastStep = 0;
     this.phase = '';
     this.cycleNo = -1;
     this.lastBreath = -1;
@@ -38,13 +46,23 @@ export class Session {
     this.wake = null;
     this.raf = 0;
     this.confirming = false;
+    this.destroyed = false;
+    this.desktop = isDesktop();
+    this.canPip = pipSupported();
+    this.win = window; // fenêtre qui pilote l'animation (celle de l'onglet, ou la fenêtre flottante)
+    this.pipWin = null;
+    this.pipOpening = false;
+    this.pending = null; // écran de fin en attente d'affichage
+    this.away = null;
+    this.ticker = null;
+    this.baseTitle = document.title;
   }
 
   // ---------- Cycle de vie ----------
 
   open() {
     this.root.hidden = false;
-    this.root.className = 'session';
+    this.root.className = `session${this.desktop ? ' desktop' : ''}`;
     this.root.innerHTML = this.template();
     document.body.classList.add('in-session');
 
@@ -73,11 +91,13 @@ export class Session {
     };
     this.onVisibility = () => {
       if (document.hidden) {
-        if (this.mode === 'run') this.pause();
+        // Sur téléphone, l'écran verrouillé fige tout : on met en pause. Sur ordinateur, on continue.
+        if (this.mode === 'run' && !this.desktop && !this.pipWin) this.pause();
       } else if (this.mode === 'run' || this.mode === 'paused') {
         this.acquireWakeLock();
       }
     };
+    this.onPipHide = () => this.leavePip();
     this.root.addEventListener('click', this.onClick);
     document.addEventListener('keydown', this.onKey);
     document.addEventListener('visibilitychange', this.onVisibility);
@@ -85,18 +105,28 @@ export class Session {
     // Doit rester synchrone avec le clic de l'utilisateur pour débloquer l'audio.
     if (this.soundOn) this.sound.unlock();
     this.acquireWakeLock();
+    if (this.opts.pipAuto && this.canPip) this.openPip();
 
     this.paint(0, 0);
     this.setHint(POSTURE[0]);
     requestAnimationFrame(() => this.root.classList.add('open'));
     this.inner.focus({ preventScroll: true });
 
-    this.last = performance.now();
-    this.raf = requestAnimationFrame(this.loop);
+    const now = performance.now();
+    this.introEnd = now + INTRO_SECONDS * 1000;
+    this.lastStep = now;
+    this.startTicker();
+    this.raf = this.win.requestAnimationFrame(this.loop);
   }
 
   destroy() {
+    this.destroyed = true;
+    this.pending = null;
+    if (this.pipWin) this.leavePip();
     cancelAnimationFrame(this.raf);
+    this.win.cancelAnimationFrame(this.raf);
+    this.stopTicker();
+    this.away?.remove();
     this.root.removeEventListener('click', this.onClick);
     document.removeEventListener('keydown', this.onKey);
     document.removeEventListener('visibilitychange', this.onVisibility);
@@ -108,6 +138,7 @@ export class Session {
     } catch {
       /* déjà relâché */
     }
+    document.title = this.baseTitle;
     document.body.classList.remove('in-session');
     this.root.classList.remove('open');
     this.root.hidden = true;
@@ -126,6 +157,7 @@ export class Session {
         <div class="s-toggles">
           <button class="icon-btn ${this.soundOn ? 'on' : ''}" data-s="sound" aria-pressed="${this.soundOn}" aria-label="Son doux">${this.soundOn ? icon.volume(22) : icon.volumeOff(22)}</button>
           <button class="icon-btn ${this.hapticsOn ? 'on' : ''}" data-s="haptics" aria-pressed="${this.hapticsOn}" aria-label="Vibrations">${icon.vibrate(22)}</button>
+          ${this.canPip ? `<button class="icon-btn" data-s="pip" aria-pressed="false" aria-label="Fenêtre flottante" title="Fenêtre flottante : continue à respirer pendant que tu travailles">${icon.pip(22)}</button>` : ''}
         </div>
       </header>
 
@@ -157,26 +189,62 @@ export class Session {
     </div>`;
   }
 
-  // ---------- Boucle ----------
+  // ---------- Horloge ----------
+  // Le temps se calcule à partir de l'horloge réelle (et non en additionnant des images) :
+  // il reste exact même quand le navigateur ralentit un onglet caché.
 
-  loop = (now) => {
-    this.raf = requestAnimationFrame(this.loop);
-    const dt = Math.min(0.25, Math.max(0, (now - this.last) / 1000));
-    this.last = now;
-    if (this.confirming) return;
-    if (this.mode === 'intro') this.tickIntro(dt);
-    else if (this.mode === 'run') this.tickRun(dt);
+  loop = () => {
+    this.raf = this.win.requestAnimationFrame(this.loop);
+    this.step(performance.now());
   };
 
-  tickIntro(dt) {
-    this.intro -= dt;
+  /** Métronome indépendant de l'affichage : un onglet caché n'anime plus rien, mais ce « tic » continue. */
+  startTicker() {
+    try {
+      const url = URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 250);'], { type: 'text/javascript' }));
+      this.ticker = new Worker(url);
+      this.tickerUrl = url;
+      this.ticker.onmessage = () => {
+        if (document.hidden || this.pipWin) this.step(performance.now());
+      };
+    } catch {
+      this.ticker = null; // sans métronome : l'animation seule pilote la session
+    }
+  }
+
+  stopTicker() {
+    this.ticker?.terminate();
+    this.ticker = null;
+    if (this.tickerUrl) URL.revokeObjectURL(this.tickerUrl);
+    this.tickerUrl = null;
+  }
+
+  step(now) {
+    const gap = now - this.lastStep;
+    this.lastStep = now;
+    if (this.confirming) {
+      if (this.mode === 'intro') this.introEnd += gap; // la confirmation fige aussi l'intro
+      return;
+    }
+    if (gap > SLEEP_GAP_MS) {
+      const lost = gap - 250;
+      this.introEnd += lost;
+      this.runStart += lost;
+    }
+    if (this.mode === 'intro') this.tickIntro(now);
+    else if (this.mode === 'run') this.tickRun(now);
+  }
+
+  tickIntro(now) {
+    this.intro = (this.introEnd - now) / 1000;
     const step = Math.min(POSTURE.length - 1, Math.floor(((INTRO_SECONDS - this.intro) / INTRO_SECONDS) * POSTURE.length));
-    this.setHint(POSTURE[step]);
+    this.setHint(POSTURE[Math.max(0, step)]);
     if (this.intro <= 0) this.startRun();
   }
 
   startRun() {
     this.mode = 'run';
+    this.runStart = performance.now() - this.elapsed * 1000;
     this.root.classList.add('running');
     if (this.soundOn && this.sound.ctx) {
       this.sound.startPad();
@@ -184,8 +252,8 @@ export class Session {
     }
   }
 
-  tickRun(dt) {
-    this.elapsed += dt;
+  tickRun(now) {
+    this.elapsed = (now - this.runStart) / 1000;
     if (this.elapsed >= this.total) {
       this.complete();
       return;
@@ -204,6 +272,8 @@ export class Session {
     this.text('remaining', formatClock(this.total - t));
     this.text('cycles', `Respiration ${Math.min(p.cycle + 1, this.cycles)} sur ${this.cycles}`);
     this.ringBar.style.strokeDashoffset = (RING_C * (1 - t / this.total)).toFixed(2);
+    // Le titre de l'onglet suit la session : on la voit même quand l'onglet est caché.
+    this.setTitle(`${PHASE_LABEL[p.phase]} · ${formatClock(this.total - t)}`);
 
     if (this.soundOn && Math.abs(p.breath - this.lastBreath) > 0.008) {
       this.sound.update(p.breath);
@@ -261,6 +331,13 @@ export class Session {
     el.classList.add('swap');
   }
 
+  setTitle(text) {
+    const full = `${text} — Respire`;
+    if (this.shown.title === full) return;
+    this.shown.title = full;
+    document.title = full;
+  }
+
   // ---------- Actions ----------
 
   act(name) {
@@ -281,6 +358,8 @@ export class Session {
         if (this.hapticsOn) vibrate(30);
         this.opts.onPrefs({ sound: this.soundOn, haptics: this.hapticsOn });
         break;
+      case 'pip': if (this.pipWin) this.leavePip(); else this.openPip(); break;
+      case 'pip-return': this.leavePip(); break;
       default:
     }
   }
@@ -313,6 +392,7 @@ export class Session {
 
   pause() {
     if (this.mode !== 'run') return;
+    this.elapsed = Math.min(this.total, (performance.now() - this.runStart) / 1000);
     this.mode = 'paused';
     this.root.classList.add('paused');
     this.sound.stopPad();
@@ -320,6 +400,7 @@ export class Session {
     btn.innerHTML = icon.play(26);
     btn.setAttribute('aria-label', 'Reprendre');
     this.inner.querySelector('[data-el="phase"]').textContent = 'En pause';
+    this.setTitle('En pause');
     this.shown.hint = '';
     this.setHint('Touche l’écran pour reprendre');
   }
@@ -327,6 +408,8 @@ export class Session {
   resume() {
     if (this.mode !== 'paused') return;
     this.mode = 'run';
+    this.runStart = performance.now() - this.elapsed * 1000;
+    this.lastStep = performance.now();
     this.root.classList.remove('paused');
     this.phase = ''; // force le réaffichage de la phase courante
     const btn = this.inner.querySelector('[data-el="toggle"]');
@@ -372,6 +455,7 @@ export class Session {
     box.hidden = true;
     box.innerHTML = '';
     this.confirming = false;
+    this.lastStep = performance.now();
   }
 
   finishEarly() {
@@ -387,6 +471,8 @@ export class Session {
     this.paint(0, this.total);
     this.ringBar.style.strokeDashoffset = '0';
     this.end();
+    this.shown.title = '';
+    document.title = 'Session terminée — Respire';
     if (this.soundOn && this.sound.ctx) this.sound.chime(523.25, 0.13);
     if (this.hapticsOn) vibrate([50, 90, 50]);
     this.opts.onFinish({ seconds: this.total, cycles: this.cycles, completed: true });
@@ -394,7 +480,8 @@ export class Session {
 
   end() {
     this.mode = 'done';
-    cancelAnimationFrame(this.raf);
+    this.win.cancelAnimationFrame(this.raf);
+    this.stopTicker();
     this.sound.stopPad();
     try {
       this.wake?.release();
@@ -403,14 +490,134 @@ export class Session {
     }
   }
 
-  /** Remplace le contenu par l'écran de fin (fourni par l'application). */
-  showDone(html) {
+  // ---------- Fenêtre flottante ----------
+
+  /** Ouvre la session dans une petite fenêtre toujours visible. À appeler depuis un clic. */
+  async openPip() {
+    if (!this.canPip || this.pipWin || this.pipOpening || this.mode === 'done') return;
+    this.pipOpening = true;
+    try {
+      const pw = await openPipWindow();
+      if (this.destroyed || this.mode === 'done') {
+        pw.close();
+        return;
+      }
+      this.enterPip(pw);
+    } catch {
+      this.opts.onNotice?.('La fenêtre flottante n’a pas pu s’ouvrir.');
+    } finally {
+      this.pipOpening = false;
+    }
+  }
+
+  enterPip(pw) {
+    this.pipWin = pw;
+    this.homeParent = this.root.parentNode;
+    this.homeNext = this.root.nextSibling;
+    pw.document.body.append(this.root);
+    this.root.classList.add('pip');
+    document.body.classList.remove('in-session');
+    this.showAway();
+
+    // L'animation suit la fenêtre flottante : celle de l'onglet est mise en veille quand il est caché.
+    this.win.cancelAnimationFrame(this.raf);
+    this.win = pw;
+    this.raf = pw.requestAnimationFrame(this.loop);
+    pw.addEventListener('keydown', this.onKey);
+    pw.addEventListener('pagehide', this.onPipHide);
+    this.syncPipButton();
+  }
+
+  /** Ramène la session dans l'onglet (et ferme la fenêtre flottante). */
+  leavePip() {
+    const pw = this.pipWin;
+    if (!pw) return;
+    this.pipWin = null;
+    try {
+      pw.cancelAnimationFrame(this.raf);
+    } catch {
+      /* fenêtre déjà fermée */
+    }
+    pw.removeEventListener('keydown', this.onKey);
+    pw.removeEventListener('pagehide', this.onPipHide);
+
+    const next = this.homeNext && this.homeNext.parentNode === this.homeParent ? this.homeNext : null;
+    this.homeParent.insertBefore(this.root, next);
+    this.root.classList.remove('pip');
+    document.body.classList.add('in-session');
+    this.away?.remove();
+    this.away = null;
+
+    this.win = window;
+    if (this.mode !== 'done') this.raf = window.requestAnimationFrame(this.loop);
+    try {
+      pw.close();
+    } catch {
+      /* déjà fermée */
+    }
+    this.syncPipButton();
+    if (this.pending) this.renderPending();
+  }
+
+  syncPipButton() {
+    const btn = this.root.querySelector('[data-s="pip"]');
+    if (!btn) return;
+    btn.classList.toggle('on', !!this.pipWin);
+    btn.setAttribute('aria-pressed', String(!!this.pipWin));
+    btn.setAttribute('aria-label', this.pipWin ? 'Ramener la session ici' : 'Fenêtre flottante');
+  }
+
+  /** Dans l'onglet, un écran d'attente remplace la session pendant qu'elle est dans la fenêtre flottante. */
+  showAway() {
+    const el = document.createElement('div');
+    el.className = 'session-away';
+    el.innerHTML = `
+      <div class="away-card">
+        <div class="away-orb">${orb('idle')}</div>
+        <h2>Ta session continue dans la fenêtre flottante</h2>
+        <p>Tu peux changer d’onglet : elle reste au premier plan.</p>
+        <button class="cta" data-s="pip-return">Ramener ici${chevron}</button>
+      </div>`;
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('[data-s="pip-return"]')) this.leavePip();
+    });
+    document.body.append(el);
+    this.away = el;
+  }
+
+  // ---------- Écran de fin ----------
+
+  /**
+   * Affiche l'écran de fin (fourni par l'application). Si la session est dans la fenêtre flottante,
+   * on y montre un message court et on garde l'écran complet pour le retour dans l'onglet.
+   */
+  showDone(html, after) {
+    this.pending = { html, after };
+    if (this.pipWin) this.renderPipDone();
+    else this.renderPending();
+  }
+
+  renderPipDone() {
     this.root.classList.remove('running', 'paused');
     this.root.classList.add('done');
-    this.inner.removeAttribute('aria-label');
+    this.inner.innerHTML = `
+      <div class="pip-done">
+        <div class="done-orb" aria-hidden="true">${orb('done')}<span class="done-check">${icon.check(40)}</span></div>
+        <h2>Session terminée</h2>
+        <p class="muted">${formatDuration(this.elapsed)} de respiration</p>
+        <button class="cta" data-s="pip-return">Voir mon résultat${chevron}</button>
+      </div>`;
+  }
+
+  renderPending() {
+    const { html, after } = this.pending;
+    this.pending = null;
+    this.root.classList.remove('running', 'paused');
+    this.root.classList.add('done');
     this.inner.setAttribute('aria-label', 'Session terminée');
     this.inner.innerHTML = html;
     this.inner.focus({ preventScroll: true });
+    after?.();
   }
 
   async acquireWakeLock() {

@@ -818,3 +818,45 @@ body.in-session .tabbar { display: none; }
 .orb-stage, .orb-stage * { pointer-events: none; }
 .s-top, .s-bottom { position: relative; z-index: 5; }
 .s-toggles .icon-btn { width: 48px; height: 48px; }
+
+/* ---------- Ordinateur : pas de vibrations ---------- */
+.session.desktop [data-s="haptics"] { display: none; }
+
+/* ---------- Fenêtre flottante ---------- */
+.pip-body { margin: 0; overflow: hidden; background: #070b18; }
+.session.pip .s-inner { max-width: none; padding: 10px 12px 12px; }
+.session.pip .s-preset { display: none; }
+.session.pip .s-top { justify-content: space-between; }
+.session.pip .s-orb-wrap { width: min(86vw, 46dvh); }
+.session.pip .s-hint { min-height: 34px; font-size: 15px; }
+.session.pip .s-remaining { font-size: 30px; }
+.session.pip .round-btn { width: 56px; height: 56px; }
+
+.pip-done { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 16px; text-align: center; }
+.pip-done .done-orb { width: 120px; margin-bottom: 4px; }
+.pip-done h2 { font-weight: 300; font-size: 28px; letter-spacing: -0.02em; }
+.pip-done .cta { width: 100%; }
+
+/* Dans l'onglet, pendant que la session est dans la fenêtre flottante */
+.session-away {
+  --ink: #eef2fb;
+  --muted: #b2bcd2;
+  --cta-bg: #ffffff;
+  --cta-ink: #0b1226;
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--ink);
+  background:
+    radial-gradient(80% 55% at 18% 8%, color-mix(in srgb, var(--v2) 42%, transparent), transparent 70%),
+    radial-gradient(75% 55% at 88% 96%, color-mix(in srgb, var(--v1) 40%, transparent), transparent 70%),
+    #070b18;
+}
+.away-card { display: flex; flex-direction: column; align-items: center; gap: 14px; max-width: 360px; }
+.away-orb { width: 150px; }
+.away-card h2 { font-weight: 300; font-size: 30px; letter-spacing: -0.02em; line-height: 1.15; }
+.away-card p { color: var(--muted); margin-bottom: 6px; }

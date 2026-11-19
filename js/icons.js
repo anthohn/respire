@@ -24,6 +24,7 @@ export const icon = {
     stroke('<path d="M4.5 9.7v4.6h3.2l4.3 3.4V6.3L7.7 9.7z" fill="currentColor"/><path d="m16 9.7 4.5 4.6M20.5 9.7 16 14.3"/>', s),
   pause: (s) => solid('<rect x="6.3" y="4.8" width="4" height="14.4" rx="1.4"/><rect x="13.7" y="4.8" width="4" height="14.4" rx="1.4"/>', s),
   play: (s) => solid('<path d="M8 5.6v12.8a1 1 0 0 0 1.5.86l10.2-6.4a1 1 0 0 0 0-1.72L9.5 4.74A1 1 0 0 0 8 5.6z"/>', s),
+  pip: (s) => stroke('<rect x="3" y="5" width="18" height="14" rx="2.6"/><rect x="12" y="12" width="7" height="5" rx="1.2" fill="currentColor"/>', s),
   leaf: (s) => stroke('<path d="M5 19c0-8 5-13.5 14-14 0 8.5-5 14-12.5 14.2"/><path d="M5 19c2-3.5 4.5-6 8-8"/>', s),
   trophy: (s) => stroke('<path d="M8 4.5h8v5a4 4 0 0 1-8 0zM8 6.5H5.5a1 1 0 0 0-1 1c0 2 1.5 3.5 3.5 3.5M16 6.5h2.5a1 1 0 0 1 1 1c0 2-1.5 3.5-3.5 3.5M12 13.5V17M8.5 20h7M10 17h4"/>', s),
   sparkle: (s) => stroke('<path d="M12 3.5v5M12 15.5v5M3.5 12h5M15.5 12h5"/>', s),

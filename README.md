@@ -13,6 +13,7 @@ L'objectif n'est pas de « faire de la relaxation » de temps en temps, mais d'i
 - **Objectif quotidien**, niveaux (Graine → Océan), trophées, calendrier du mois, graphique de la semaine, historique avec ressenti après chaque session.
 - **Un message qui donne envie de revenir** : « Ton 7e jour t'attend », jour de grâce, première session d'une minute, conseils du jour.
 - **Une couleur qui suit la journée** : matin, journée, soir, nuit. Thème clair, sombre ou automatique.
+- **Respirer en travaillant (ordinateur)** : la session continue quand tu changes d'onglet (le titre de l'onglet affiche la phase et le temps restant). Dans Chrome et Edge, un bouton ouvre en plus une **fenêtre flottante** toujours visible, comme une vidéo en Picture-in-Picture ; un réglage permet de l'ouvrir automatiquement au lancement. Firefox et Safari ne proposent pas cette fenêtre : la session y continue simplement en arrière-plan.
 - **Application installable (PWA)** et utilisable hors ligne. Toutes les données restent sur l'appareil (aucun compte, aucun serveur).
 - **Rappel quotidien** : génère un événement récurrent à ajouter à ton calendrier (fonctionne sur tous les téléphones, sans serveur).
 

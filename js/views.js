@@ -335,6 +335,7 @@ export function settingsView(c) {
     <p class="list-title">Pendant la session</p>
     ${toggle('sound', s.sound, 'Son doux', 'Une note qui accompagne ton souffle')}
     ${toggle('haptics', s.haptics, 'Vibrations', 'Une légère impulsion à chaque changement de phase')}
+    ${ui.pipSupported ? toggle('pipAuto', s.pipAuto, 'Fenêtre flottante', 'Ouvre la session dans une petite fenêtre toujours visible : tu respires pendant que tu travailles') : ''}
   </section>
 
   <section class="card list rise">
@@ -373,7 +374,7 @@ export function settingsView(c) {
 // ---------- Choix de la session (feuille) ----------
 
 export function sheetView(c) {
-  const { state } = c;
+  const { state, ui } = c;
   const s = state.settings;
   const plan = sessionPlan(getPreset(s.presetId), s.minutes);
   return `
@@ -408,7 +409,7 @@ export function sheetView(c) {
 
     <div class="list inset">
       ${toggle('sound', s.sound, 'Son doux')}
-      ${toggle('haptics', s.haptics, 'Vibrations')}
+      ${ui.pipSupported ? toggle('pipAuto', s.pipAuto, 'Fenêtre flottante') : toggle('haptics', s.haptics, 'Vibrations')}
     </div>
   </div>
 
