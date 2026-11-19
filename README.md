@@ -7,7 +7,7 @@ L'objectif n'est pas de « faire de la relaxation » de temps en temps, mais d'i
 ## Fonctionnalités
 
 - **Sessions guidées** : une aura qui se gonfle et se dégonfle au rythme choisi, avec consignes discrètes (« par le nez, tout en douceur »), compte à rebours de chaque phase, repères sonores très discrets et vibrations en option (le son monte quand tu inspires, descend quand tu expires ; trois styles : « Glissés » par défaut, « Bulles », « Fil » ; volume réglable ; tout est généré en direct).
-- **4 rythmes** : Expiration longue (4 · 6, recommandé), Cohérence (5 · 5), Calme profond (4 · 2 · 6), 4-7-8 (inspire 4, retiens 7, expire 8). Durées de 1, 3, 5 ou 10 minutes ; la session se termine toujours sur une expiration complète.
+- **4 rythmes** : Expiration longue (4 · 6, recommandé), Cohérence (5 · 5), Calme profond (4 · 2 · 6), 4-7-8 (inspire 4, retiens 7, expire 8). Durées de 1, 3, 5 ou 10 minutes ; la session se termine toujours sur une expiration complète. Le choix se fait un rythme à la fois : une bulle respire en direct au rythme (et à la couleur) choisi ; on balaie, on touche les points ou on utilise les flèches du clavier.
 - **Série (streak) indulgente** : une minute par jour suffit. Un jour manqué par semaine est offert (« jour de repos »), deux jours d'affilée cassent la série.
 - **Ascension** : un chemin qui monte de 0 à 100 jours, avec des paliers (3, 7, 14, 30, 60, 100) et un marqueur « Tu es ici ».
 - **Objectif quotidien**, niveaux (Graine → Océan), trophées, calendrier du mois, graphique de la semaine, historique avec ressenti après chaque session.

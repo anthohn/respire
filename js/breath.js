@@ -4,26 +4,26 @@ export const PRESETS = [
   {
     id: 'long',
     name: 'Expiration longue',
-    tagline: 'Idéal pour réapprendre à respirer',
+    tagline: 'Recommandé pour réapprendre à respirer',
     inhale: 4, hold1: 0, exhale: 6, hold2: 0,
     recommended: true,
   },
   {
     id: 'coherence',
     name: 'Cohérence',
-    tagline: 'Régulier et apaisant · 6 par minute',
+    tagline: 'Régulier et apaisant',
     inhale: 5, hold1: 0, exhale: 5, hold2: 0,
   },
   {
     id: 'calm',
     name: 'Calme profond',
-    tagline: 'Avec une courte pause avant d’expirer',
+    tagline: 'Une courte pause avant d’expirer',
     inhale: 4, hold1: 2, exhale: 6, hold2: 0,
   },
   {
     id: '478',
     name: '4-7-8',
-    tagline: 'Le classique du soir, sans forcer',
+    tagline: 'Le classique du soir, assis ou allongé',
     inhale: 4, hold1: 7, exhale: 8, hold2: 0,
   },
 ];

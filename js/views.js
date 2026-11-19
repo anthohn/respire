@@ -449,10 +449,17 @@ export function settingsView(c) {
 
 // ---------- Choix de la session (feuille) ----------
 
-export function sheetView(c) {
-  const { state, ui } = c;
+/** `dir` : sens du dernier changement de rythme (+1 vers la droite, -1 vers la gauche, 0 aucun) pour l'animation. */
+export function sheetView(c, { dir = 0 } = {}) {
+  const { state } = c;
   const s = state.settings;
-  const plan = sessionPlan(getPreset(s.presetId), s.minutes);
+  const preset = getPreset(s.presetId);
+  const plan = sessionPlan(preset, s.minutes);
+  const swap = dir > 0 ? 'from-right' : dir < 0 ? 'from-left' : '';
+  const dots = PRESETS.map((p) => {
+    const on = p.id === preset.id;
+    return `<button role="radio" aria-checked="${on}" class="rdot ${on ? 'on' : ''}" data-action="pick-preset" data-id="${p.id}" aria-label="${esc(p.name)}, ${patternLabel(p)}"><i></i></button>`;
+  }).join('');
   return `
   <div class="sheet-grip" aria-hidden="true"></div>
   <header class="sheet-head">
@@ -460,30 +467,23 @@ export function sheetView(c) {
     <button class="icon-btn small" data-action="close-sheet" aria-label="Fermer">${icon.close(20)}</button>
   </header>
 
-  <div class="sheet-body">
-    <ul class="preset-list" role="radiogroup" aria-label="Rythme de respiration">
-      ${PRESETS.map((p) => {
-        return `
-        <li>
-          <button role="radio" aria-checked="${p.id === s.presetId}" class="preset ${p.id === s.presetId ? 'on' : ''}" data-action="pick-preset" data-id="${p.id}">
-            <span class="preset-top"><b>${esc(p.name)}</b>${p.recommended ? '<em class="tag">Recommandé</em>' : ''}<span class="preset-pattern">${patternLabel(p)}</span></span>
-            <span class="preset-tag">${esc(p.tagline)}</span>
-            <span class="pattern" aria-hidden="true">
-              <i class="in" style="flex:${p.inhale}"></i>${p.hold1 ? `<i class="hold" style="flex:${p.hold1}"></i>` : ''}<i class="out" style="flex:${p.exhale}"></i>${p.hold2 ? `<i class="hold" style="flex:${p.hold2}"></i>` : ''}
-            </span>
-          </button>
-        </li>`;
-      }).join('')}
-    </ul>
+  <section class="rhythm" data-rhythm="${preset.id}" aria-roledescription="carrousel" aria-label="Rythme de respiration">
+    <div class="rhythm-stage">
+      <button class="rz-arrow prev" data-action="rhythm-prev" aria-label="Rythme précédent">${icon.chevronLeft(20)}</button>
+      <div class="rhythm-orb">${orb('idle')}</div>
+      <button class="rz-arrow next" data-action="rhythm-next" aria-label="Rythme suivant">${icon.chevronRight(20)}</button>
+    </div>
+    <div class="rhythm-info ${swap}" aria-live="polite">
+      <h3 class="rhythm-name">${esc(preset.name)}</h3>
+      <p class="rhythm-pattern" aria-label="Inspire ${preset.inhale}${preset.hold1 ? `, retiens ${preset.hold1}` : ''}, expire ${preset.exhale}${preset.hold2 ? `, retiens ${preset.hold2}` : ''}">${patternLabel(preset)}</p>
+      <p class="rhythm-tag">${esc(preset.tagline)}</p>
+    </div>
+    <div class="rhythm-dots" role="radiogroup" aria-label="Rythme">${dots}</div>
+  </section>
 
-    <p class="list-title">Durée</p>
+  <div class="sheet-body">
     <div class="seg big" role="radiogroup" aria-label="Durée">
       ${DURATIONS.map((d) => `<button role="radio" aria-checked="${d === s.minutes}" class="${d === s.minutes ? 'on' : ''}" data-action="pick-minutes" data-min="${d}">${d} min</button>`).join('')}
-    </div>
-
-    <div class="list inset">
-      ${toggle('sound', s.sound, 'Repères sonores')}
-      ${ui.pipSupported ? toggle('pipAuto', s.pipAuto, 'Fenêtre flottante') : toggle('haptics', s.haptics, 'Vibrations')}
     </div>
   </div>
 

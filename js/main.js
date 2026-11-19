@@ -2,13 +2,13 @@
 
 import { load, save, reset } from './store.js';
 import { dayKey, buildStats, levelInfo, earnedBadgeIds, minutesOn, BADGES } from './stats.js';
-import { getPreset, phaseAt } from './breath.js';
+import { PRESETS, getPreset, phaseAt } from './breath.js';
 import { tipOfTheDay, finishMessage } from './content.js';
 import { homeView, progressView, settingsView, sheetView, doneView, onboardingView } from './views.js';
 import { Session } from './session.js';
 import { icon } from './icons.js';
 import { pipSupported } from './pip.js';
-import { Aura } from './aura.js';
+import { Aura, readPalette } from './aura.js';
 import { Sound, scheduleDemo } from './audio.js';
 import { syncNow, enableSync, joinWithCode, deleteRemote, normalizeCode, formatCode, SyncError, SYNC_MESSAGES } from './sync.js';
 
@@ -131,7 +131,7 @@ function mountHero() {
   const state_ = (hero = { aura, raf: 0 });
   const loop = () => {
     state_.raf = requestAnimationFrame(loop);
-    if (document.hidden || session) return; // pas de calcul inutile quand on ne la voit pas
+    if (document.hidden || session || sheetEl.classList.contains('open')) return; // pas de calcul inutile quand on ne la voit pas
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
     if (!w || !h) return;
@@ -185,25 +185,142 @@ function askConfirm({ title, text, ok = 'Confirmer' }) {
 
 // ---------- Feuille « Ta session » ----------
 
+// Une bulle vivante respire au rythme choisi : on sent le rythme avant de le lancer.
+let sheetLive = null; // { aura, canvas, raf, t0, preset, cur, from, to, mix, size, phase }
+
+const mixPalette = (a, b, k) => Object.fromEntries(Object.keys(a).map((n) => [n, a[n].map((v, i) => v + (b[n][i] - v) * k)]));
+const easeOutCubic = (x) => 1 - (1 - x) ** 3;
+
 function openSheet() {
   sheetEl.hidden = false;
   sheetEl.innerHTML = `<div class="sheet-backdrop" data-action="close-sheet"></div>
     <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">${sheetView(context())}</div>`;
   void sheetEl.offsetWidth;
   sheetEl.classList.add('open');
+  mountSheetOrb();
 }
 
-function refreshSheet() {
+function mountSheetOrb() {
+  const host = sheetEl.querySelector('.rhythm-orb');
+  if (!host) return;
+  const canvas = document.createElement('canvas');
+  canvas.className = 'hero-aura';
+  canvas.setAttribute('aria-hidden', 'true');
+  host.append(canvas);
+  const aura = Aura.create(canvas, { full: false, pixelRatio: 1 });
+  if (aura) host.classList.add('webgl');
+  else canvas.remove(); // sans WebGL, la bulle en CSS reste affichée
+  const pal = readPalette(host);
+  aura?.setPalette(pal);
+  const live = (sheetLive = {
+    aura,
+    canvas: aura ? canvas : null,
+    raf: 0,
+    t0: performance.now(),
+    preset: getPreset(state.settings.presetId),
+    cur: pal,
+    from: pal,
+    to: pal,
+    mix: 1,
+    size: '',
+    phase: '',
+  });
+  let last = performance.now();
+  const loop = () => {
+    live.raf = requestAnimationFrame(loop);
+    if (document.hidden || session) return;
+    const now = performance.now();
+    const dt = now - last;
+    last = now;
+    const t = (now - live.t0) / 1000;
+    const p = phaseAt(live.preset, t);
+    if (live.aura && live.canvas) {
+      const w = live.canvas.clientWidth;
+      const h = live.canvas.clientHeight;
+      if (w && h) {
+        if (`${w}x${h}` !== live.size) {
+          live.size = `${w}x${h}`;
+          live.aura.resize(w, h, window.devicePixelRatio || 1);
+        }
+        if (p.phase !== live.phase) {
+          live.phase = p.phase;
+          if (p.phase === 'inhale') live.aura.pulse(1);
+          else if (p.phase === 'exhale') live.aura.pulse(-1);
+        }
+        if (live.mix < 1) {
+          live.mix = Math.min(1, live.mix + dt / 900);
+          live.cur = mixPalette(live.from, live.to, easeOutCubic(live.mix));
+          live.aura.setPalette(live.cur);
+        }
+        live.aura.setBubble(w / 2, h / 2, live.canvas.parentElement.clientWidth * 0.5 * (0.52 + 0.4 * p.breath));
+        live.aura.draw(p.breath);
+      }
+    }
+  };
+  loop();
+}
+
+function unmountSheetOrb() {
+  if (!sheetLive) return;
+  cancelAnimationFrame(sheetLive.raf);
+  sheetLive.aura?.destroy();
+  sheetLive = null;
+}
+
+/** Redessine la feuille en gardant la même bulle (le canvas WebGL est simplement déplacé dans le nouveau décor). */
+function refreshSheet({ dir = 0 } = {}) {
   const panel = sheetEl.querySelector('.sheet-panel');
   if (!panel) return;
   const top = panel.querySelector('.sheet-body')?.scrollTop || 0;
-  panel.innerHTML = sheetView(context());
+  const f = document.activeElement;
+  const focus = f && panel.contains(f) && f.dataset?.action ? { ...f.dataset } : null;
+  sheetLive?.canvas?.remove();
+  panel.innerHTML = sheetView(context(), { dir });
   panel.querySelector('.sheet-body').scrollTop = top;
+
+  const live = sheetLive;
+  if (live) {
+    const host = panel.querySelector('.rhythm-orb');
+    if (live.canvas) {
+      host.append(live.canvas);
+      host.classList.add('webgl');
+    }
+    const preset = getPreset(state.settings.presetId);
+    if (preset.id !== live.preset.id) {
+      // Nouveau rythme : la bulle repart d'une inspiration, et ses couleurs glissent vers celles du rythme.
+      live.preset = preset;
+      live.t0 = performance.now();
+      live.phase = '';
+      live.from = live.cur;
+      live.to = readPalette(host);
+      live.mix = 0;
+    }
+  }
+  if (focus) {
+    const sel = Object.entries(focus).map(([k, v]) => `[data-${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${CSS.escape(v)}"]`).join('');
+    panel.querySelector(sel)?.focus({ preventScroll: true });
+  }
+}
+
+function setRhythm(id, dir) {
+  if (id === state.settings.presetId) return;
+  state.settings.presetId = id;
+  touchPrefs();
+  save(state);
+  scheduleSync();
+  refreshSheet({ dir });
+}
+
+/** +1 : rythme suivant, -1 : précédent (on boucle). */
+function stepRhythm(dir) {
+  const i = PRESETS.findIndex((p) => p.id === getPreset(state.settings.presetId).id);
+  setRhythm(PRESETS[(i + dir + PRESETS.length) % PRESETS.length].id, dir);
 }
 
 function closeSheet({ instant = false } = {}) {
   sheetEl.classList.remove('open');
   const done = () => {
+    unmountSheetOrb();
     sheetEl.hidden = true;
     sheetEl.innerHTML = '';
   };
@@ -446,12 +563,11 @@ const actions = {
     startSession();
   },
   'pick-preset'(el) {
-    state.settings.presetId = el.dataset.id;
-    touchPrefs();
-    save(state);
-    scheduleSync();
-    refreshSheet();
+    const index = (id) => PRESETS.findIndex((p) => p.id === getPreset(id).id);
+    setRhythm(el.dataset.id, Math.sign(index(el.dataset.id) - index(state.settings.presetId)));
   },
+  'rhythm-prev': () => stepRhythm(-1),
+  'rhythm-next': () => stepRhythm(1),
   'pick-minutes'(el) {
     state.settings.minutes = Number(el.dataset.min);
     touchPrefs();
@@ -734,8 +850,38 @@ document.addEventListener('input', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !sheetEl.hidden && !session) closeSheet();
+  if (sheetEl.hidden || session) return;
+  if (e.key === 'Escape') closeSheet();
+  else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.target.closest?.('input, textarea, select')) {
+    e.preventDefault();
+    stepRhythm(e.key === 'ArrowRight' ? 1 : -1);
+  }
 });
+
+// Balayage sur la bulle : rythme précédent ou suivant (la bulle suit le doigt, puis revient).
+let swipe = null;
+document.addEventListener('pointerdown', (e) => {
+  const rhythm = e.target.closest?.('.rhythm');
+  if (!rhythm || e.target.closest('.rz-arrow, .rdot')) return;
+  swipe = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, rhythm };
+});
+document.addEventListener('pointermove', (e) => {
+  if (!swipe || e.pointerId !== swipe.id) return;
+  swipe.dx = e.clientX - swipe.x;
+  if (Math.abs(swipe.dx) < 8) return;
+  swipe.rhythm.classList.add('dragging');
+  swipe.rhythm.style.setProperty('--drag', `${Math.max(-70, Math.min(70, swipe.dx * 0.45))}px`);
+});
+const endSwipe = (e) => {
+  if (!swipe || e.pointerId !== swipe.id) return;
+  const { dx, rhythm } = swipe;
+  swipe = null;
+  rhythm.classList.remove('dragging');
+  rhythm.style.removeProperty('--drag');
+  if (e.type === 'pointerup' && Math.abs(dx) > 44) stepRhythm(dx < 0 ? 1 : -1);
+};
+document.addEventListener('pointerup', endSwipe);
+document.addEventListener('pointercancel', endSwipe);
 
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
