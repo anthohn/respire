@@ -590,6 +590,7 @@ function finishOnboarding() {
   state.onboarded = true;
   state.name = ui.ob.name.trim();
   state.settings.goalMin = ui.ob.goal;
+  if (ui.circle.form === 'join' && !ui.circle.name) ui.circle.name = state.name; // arrivé par une invitation : le prénom est déjà là
   touchPrefs();
   save(state);
   scheduleSync();
