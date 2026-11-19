@@ -3,7 +3,7 @@
 
 import { Sound, vibrate } from './audio.js';
 import { phaseAt, breathAt, sessionPlan, patternLabel, cycleLength } from './breath.js';
-import { HINTS, PHASE_LABEL, POSTURE, BEGINNER_HINT } from './content.js';
+import { HINTS, PHASE_LABEL, POSTURE } from './content.js';
 import { formatClock, formatDuration, MIN_SECONDS } from './stats.js';
 import { icon } from './icons.js';
 import { orb, esc } from './views.js';
@@ -311,8 +311,7 @@ export class Session {
     void label.offsetWidth; // relance l'animation
     label.classList.add('swap');
     const hints = HINTS[p.phase];
-    const reassure = this.opts.beginner && p.phase === 'exhale' && p.cycle === 1;
-    this.setHint(reassure ? BEGINNER_HINT : hints[p.cycle % hints.length]);
+    this.setHint(hints[p.cycle % hints.length]);
     if (p.phase === 'inhale') this.aura?.pulse(1);
     else if (p.phase === 'exhale') this.aura?.pulse(-1);
     if (this.soundOn) this.sound.cue(p.phase, p.cycle);
