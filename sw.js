@@ -1,6 +1,6 @@
 // Service worker : l'application fonctionne hors ligne une fois chargée.
 // Incrémente VERSION à chaque publication pour que les téléphones récupèrent les nouveaux fichiers.
-const VERSION = 'respire-v1';
+const VERSION = 'respire-v2';
 
 const ASSETS = [
   './',
@@ -37,7 +37,7 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Réseau d'abord pour la page (toujours à jour), cache d'abord pour le reste.
+// Réseau d'abord pour la page (toujours à jour), cache puis mise à jour en arrière-plan pour le reste.
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET' || new URL(request.url).origin !== location.origin) return;
@@ -55,11 +55,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Fichiers de l'application : on répond tout de suite avec le cache, et on le met à jour en arrière-plan.
   event.respondWith(
-    caches.match(request).then((hit) => hit || fetch(request).then((res) => {
-      const copy = res.clone();
-      caches.open(VERSION).then((cache) => cache.put(request, copy));
-      return res;
-    })),
+    caches.match(request).then((hit) => {
+      const fresh = fetch(request).then((res) => {
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(VERSION).then((cache) => cache.put(request, copy));
+        }
+        return res;
+      });
+      return hit || fresh;
+    }),
   );
 });
