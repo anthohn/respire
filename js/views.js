@@ -123,9 +123,8 @@ export function homeView(c) {
     <p class="lede">${lede({ stats, hour: now.getHours() })}</p>
     <div class="hero-orb">${orb('idle')}</div>
     <button class="cta ${st.todayDone ? 'quiet' : ''}" data-action="start">${cta}<span class="cta-ico">${icon.chevronRight(20)}</span></button>
-    <button class="session-chip" data-action="open-sheet" aria-label="Modifier la session">
-      <span><b>${esc(preset.name)}</b> <i>·</i> ${patternLabel(preset)} <i>·</i> ${minutes} min</span>
-      <em>Modifier</em>
+    <button class="session-chip" data-action="open-sheet" aria-label="Modifier la session : ${esc(preset.name)}, ${patternLabel(preset)}, ${minutes} minutes">
+      <span><b>${esc(preset.name)}</b> <i>·</i> ${patternLabel(preset)} <i>·</i> ${minutes} min</span>${icon.settings(16)}
     </button>
   </section>
 
