@@ -220,6 +220,11 @@ export class Session {
   }
 
   step(now) {
+    // Fenêtre flottante fermée sans prévenir (certains systèmes) : la session revient dans l'onglet.
+    if (this.pipWin?.closed) {
+      this.leavePip();
+      return;
+    }
     const gap = now - this.lastStep;
     this.lastStep = now;
     if (this.confirming) {
@@ -361,11 +366,17 @@ export class Session {
       case 'pip': if (this.pipWin) this.leavePip(); else this.openPip(); break;
       case 'pip-return': this.leavePip(); break;
       case 'pip-focus':
+        if (!this.pipWin || this.pipWin.closed) {
+          this.leavePip();
+          this.opts.onNotice?.('La fenêtre flottante avait été fermée : la session est revenue ici.');
+          break;
+        }
         try {
-          this.pipWin?.focus();
+          this.pipWin.focus();
         } catch {
           /* le navigateur refuse : « Ramener ici » reste possible */
         }
+        this.opts.onNotice?.('Fenêtre flottante demandée au premier plan. Si elle reste cachée, utilise « Ramener ici ».');
         break;
       default:
     }
