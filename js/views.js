@@ -463,7 +463,6 @@ export function sheetView(c) {
   <div class="sheet-body">
     <ul class="preset-list" role="radiogroup" aria-label="Rythme de respiration">
       ${PRESETS.map((p) => {
-        const total = p.inhale + p.hold1 + p.exhale + p.hold2;
         return `
         <li>
           <button role="radio" aria-checked="${p.id === s.presetId}" class="preset ${p.id === s.presetId ? 'on' : ''}" data-action="pick-preset" data-id="${p.id}">
@@ -472,7 +471,6 @@ export function sheetView(c) {
             <span class="pattern" aria-hidden="true">
               <i class="in" style="flex:${p.inhale}"></i>${p.hold1 ? `<i class="hold" style="flex:${p.hold1}"></i>` : ''}<i class="out" style="flex:${p.exhale}"></i>${p.hold2 ? `<i class="hold" style="flex:${p.hold2}"></i>` : ''}
             </span>
-            <small class="preset-meta">${(60 / total).toFixed(1).replace('.', ',')} respirations par minute</small>
           </button>
         </li>`;
       }).join('')}

@@ -5,6 +5,8 @@
 //   Le serveur ne voit que l'identifiant (qui ne permet pas de retrouver le code) et du texte chiffré.
 // - La fusion ne perd jamais rien : les sessions de tous les appareils s'additionnent.
 
+import { getPreset } from './breath.js';
+
 const API = 'api/sync';
 const SALT = 'respire-sync-v1';
 const ITERATIONS = 600000; // rend chaque essai de code coûteux, même si la base de données fuitait
@@ -143,7 +145,7 @@ export const samePayload = (a, b) => JSON.stringify(normalize(a)) === JSON.strin
 export function applyPayload(state, p) {
   state.name = p.prefs.name || '';
   state.settings.goalMin = p.prefs.goalMin ?? state.settings.goalMin;
-  state.settings.presetId = p.prefs.presetId ?? state.settings.presetId;
+  state.settings.presetId = getPreset(p.prefs.presetId ?? state.settings.presetId).id;
   state.settings.minutes = p.prefs.minutes ?? state.settings.minutes;
   state.prefsAt = p.prefsAt;
   state.onboarded = state.onboarded || p.onboarded;

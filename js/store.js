@@ -1,5 +1,7 @@
 // Persistance locale (localStorage). Aucune donnée ne quitte l'appareil.
 
+import { getPreset } from './breath.js';
+
 const KEY = 'respire:v1';
 
 const defaults = () => ({
@@ -32,6 +34,7 @@ export function load() {
     const settings = { ...base.settings, ...(data.settings || {}) };
     // Anciennes ambiances (souffle, vague, carillon) : remplacées par les nouveaux repères discrets.
     if (!['glisse', 'bulle', 'fil'].includes(settings.soundMode)) settings.soundMode = base.settings.soundMode;
+    settings.presetId = getPreset(settings.presetId).id;
     return {
       ...base,
       ...data,

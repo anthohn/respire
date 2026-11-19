@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addDays, streakInfo, weekKeys, levelInfo, earnedBadgeIds, buildStats, formatDuration, formatClock } from '../js/stats.js';
-import { PRESETS, sessionPlan, phaseAt, cycleLength } from '../js/breath.js';
+import { PRESETS, sessionPlan, phaseAt, cycleLength, getPreset } from '../js/breath.js';
 
 const TODAY = '2026-11-19'; // jeudi
 const s = (date, seconds = 300) => ({ date, seconds });
@@ -183,4 +183,11 @@ test('une session compte toujours pour la série (au moins 60 s), quel que soit 
     }
   }
   assert.deepEqual(sessionPlan(PRESETS.find((x) => x.id === '478'), 1), { cycles: 4, totalSeconds: 76 });
+});
+
+test('rythmes : 4 au choix, et un rythme retiré retombe sur le recommandé', () => {
+  assert.deepEqual(PRESETS.map((p) => p.id), ['long', 'coherence', 'calm', '478']);
+  assert.equal(getPreset('first').id, 'long', 'ancien réglage « Premiers pas »');
+  assert.equal(getPreset(undefined).id, 'long');
+  assert.equal(getPreset('478').id, '478');
 });

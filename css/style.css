@@ -616,21 +616,20 @@ body.in-session .tabbar { display: none; }
 .sheet-foot .cta { width: 100%; }
 .sheet-body .list-title { margin-top: 20px; }
 
-.preset-list { display: flex; flex-direction: column; gap: 10px; }
-.preset { width: 100%; display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; text-align: left; border-radius: 22px; background: var(--glass); border: 1.5px solid var(--hair); transition: border-color 0.25s, background 0.25s, transform 0.2s; }
+.preset-list { display: flex; flex-direction: column; gap: 8px; }
+.preset { width: 100%; display: flex; flex-direction: column; gap: 2px; padding: 10px 16px 11px; line-height: 1.3; text-align: left; border-radius: 20px; background: var(--glass); border: 1.5px solid var(--hair); transition: border-color 0.25s, background 0.25s, transform 0.2s; }
 .preset:active { transform: scale(0.99); }
 .preset.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--glass)); }
 .preset-top { display: flex; align-items: center; gap: 8px; }
-.preset-top b { font-size: 16.5px; }
-.preset-pattern { margin-left: auto; font-weight: 300; font-size: 22px; color: var(--accent); letter-spacing: 0.02em; }
+.preset-top b { font-size: 16px; }
+.preset-pattern { margin-left: auto; line-height: 1.1; font-weight: 300; font-size: 21px; color: var(--accent); letter-spacing: 0.02em; }
 .tag { font-style: normal; font-size: 10.5px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; border-radius: 99px; color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
-.preset-tag { font-size: 14px; color: var(--muted); font-weight: 600; }
-.pattern { display: flex; gap: 3px; height: 7px; margin-top: 4px; }
+.preset-tag { font-size: 13.5px; color: var(--muted); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pattern { display: flex; gap: 3px; height: 6px; margin-top: 5px; }
 .pattern i { border-radius: 99px; }
 .pattern .in { background: var(--accent-2); }
 .pattern .hold { background: var(--faint); opacity: 0.6; }
 .pattern .out { background: var(--accent); }
-.preset-meta { font-size: 12.5px; color: var(--faint); font-weight: 700; }
 
 /* ---------- Session (toujours sombre et immersive) ---------- */
 

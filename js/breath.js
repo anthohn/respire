@@ -2,22 +2,16 @@
 
 export const PRESETS = [
   {
-    id: 'first',
-    name: 'Premiers pas',
-    tagline: 'Doux et court, pour s’habituer',
-    inhale: 3, hold1: 0, exhale: 4, hold2: 0,
-  },
-  {
     id: 'long',
     name: 'Expiration longue',
-    tagline: 'Le rythme idéal pour réapprendre à respirer',
+    tagline: 'Idéal pour réapprendre à respirer',
     inhale: 4, hold1: 0, exhale: 6, hold2: 0,
     recommended: true,
   },
   {
     id: 'coherence',
     name: 'Cohérence',
-    tagline: 'Régulier et apaisant, 6 respirations par minute',
+    tagline: 'Régulier et apaisant · 6 par minute',
     inhale: 5, hold1: 0, exhale: 5, hold2: 0,
   },
   {
@@ -29,14 +23,17 @@ export const PRESETS = [
   {
     id: '478',
     name: '4-7-8',
-    tagline: 'Inspire 4, retiens 7, expire 8. Un classique du soir, assis ou allongé, sans forcer.',
+    tagline: 'Le classique du soir, sans forcer',
     inhale: 4, hold1: 7, exhale: 8, hold2: 0,
   },
 ];
 
 export const DURATIONS = [1, 3, 5, 10];
 
-export const getPreset = (id) => PRESETS.find((p) => p.id === id) || PRESETS[1];
+export const DEFAULT_PRESET_ID = 'long';
+
+/** Rythme demandé, ou le recommandé si l'identifiant n'existe plus (rythme retiré, réglage ancien ou synchronisé). */
+export const getPreset = (id) => PRESETS.find((p) => p.id === id) || PRESETS.find((p) => p.id === DEFAULT_PRESET_ID);
 
 export const cycleLength = (p) => p.inhale + p.hold1 + p.exhale + p.hold2;
 
