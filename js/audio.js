@@ -73,9 +73,10 @@ export class Sound {
     this.ctx = ctx;
   }
 
-  start(at = this.ctx.currentTime) {
+  start(at) {
     if (!this.ctx || this.g) return;
     const ctx = this.ctx;
+    at = at ?? ctx.currentTime;
     const g = {};
     g.master = ctx.createGain();
     g.master.gain.value = gainFor(this.volume);
@@ -121,9 +122,10 @@ export class Sound {
   }
 
   /** `breath` : 0 = poumons vides, 1 = poumons pleins. Seul le mode « Fil » est continu. */
-  update(breath, at = this.ctx.currentTime) {
+  update(breath, at) {
     const g = this.g;
-    if (!g || !g.thread) return;
+    if (!g || !g.thread || !this.ctx) return;
+    at = at ?? this.ctx.currentTime;
     const e = clamp01(breath);
     const f = 261.63 * Math.pow(2, (7 / 12) * e); // do → sol
     g.thread.frequency.setTargetAtTime(f, at, 0.12);
@@ -132,8 +134,9 @@ export class Sound {
   }
 
   /** Changement de phase. L'inspiration monte, l'expiration descend ; les pauses restent silencieuses. */
-  cue(phase, cycle = 0, at = this.ctx.currentTime) {
-    if (!this.g) return;
+  cue(phase, cycle = 0, at) {
+    if (!this.g || !this.ctx) return;
+    at = at ?? this.ctx.currentTime;
     if (this.mode === 'glisse') {
       if (phase === 'inhale') this.glide(330, 494, 1.3, 0.06, at, 2000); // mi → si, plus clair
       else if (phase === 'exhale') this.glide(440, 294, 1.7, 0.05, at, 1300); // la → ré, plus rond
@@ -194,16 +197,18 @@ export class Sound {
   }
 
   /** Début et fin de session : le même geste, en plus long (monte au début, redescend à la fin). */
-  chime(kind = 'start', at = this.ctx?.currentTime) {
+  chime(kind = 'start', at) {
     if (!this.ctx || !this.g) return;
+    at = at ?? this.ctx.currentTime;
     if (kind === 'start') this.glide(262, 392, 1.8, 0.05, at, 1500);
     else this.glide(392, 262, 2.6, 0.05, at, 1200);
   }
 
   /** Fin de la session : tout s'éteint doucement. */
-  stop(at = this.ctx.currentTime) {
+  stop(at) {
     const g = this.g;
-    if (!g) return;
+    if (!g || !this.ctx) return;
+    at = at ?? this.ctx.currentTime;
     this.g = null;
     g.master.gain.setTargetAtTime(0, at, 0.25);
     [g.thread, g.thread2].forEach((s) => {

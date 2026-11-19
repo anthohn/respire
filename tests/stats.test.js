@@ -143,3 +143,22 @@ test('ascension : le marqueur suit la série', () => {
   assert.equal(summit.marker.y, summit.pts[STEPS.length - 1].y);
   assert.equal(summit.done, summit.full);
 });
+
+import { Sound } from '../js/audio.js';
+
+test('son : aucune méthode ne plante tant que le son n’a jamais été activé', () => {
+  // Régression : le son est désactivé par défaut, donc sans horloge audio ; pause, quitter et fin de session appellent stop().
+  const s = new Sound();
+  assert.doesNotThrow(() => {
+    s.stop();
+    s.stop(3);
+    s.update(0.5);
+    s.cue('inhale', 2);
+    s.chime('start');
+    s.chime('end', 1);
+    s.setVolume(40);
+    s.setMode('bulle');
+    s.start();
+  });
+  assert.equal(s.g, null);
+});
