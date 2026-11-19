@@ -9,7 +9,7 @@ import { Session } from './session.js';
 import { icon } from './icons.js';
 import { pipSupported } from './pip.js';
 import { Aura, readPalette } from './aura.js';
-import { Sound, scheduleDemo } from './audio.js';
+import { createSound, scheduleDemo } from './audio.js';
 import { syncNow, enableSync, joinWithCode, deleteRemote, normalizeCode, formatCode, SyncError, SYNC_MESSAGES } from './sync.js';
 
 let state = load();
@@ -84,7 +84,7 @@ function stopPreview() {
 /** Joue environ une respiration complète avec l'ambiance choisie. À appeler depuis un clic. */
 async function previewSound() {
   stopPreview();
-  const sound = new Sound();
+  const sound = createSound();
   sound.setMode(state.settings.soundMode);
   sound.setVolume(state.settings.soundVolume);
   preview = { sound };

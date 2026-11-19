@@ -1,7 +1,7 @@
 // Session de respiration plein écran : intro, respiration guidée, pause, fin.
 // Sur ordinateur elle continue en arrière-plan et peut passer dans une fenêtre flottante.
 
-import { Sound, vibrate } from './audio.js';
+import { createSound, vibrate } from './audio.js';
 import { phaseAt, breathAt, sessionPlan, patternLabel, cycleLength } from './breath.js';
 import { HINTS, PHASE_LABEL, POSTURE } from './content.js';
 import { formatClock, formatDuration, MIN_SECONDS } from './stats.js';
@@ -34,9 +34,16 @@ export class Session {
     this.cycles = plan.cycles;
     this.soundOn = opts.sound;
     this.hapticsOn = opts.haptics;
-    this.sound = new Sound();
+    this.sound = createSound();
     this.sound.setMode(opts.soundMode);
     this.sound.setVolume(opts.soundVolume);
+    // Le lecteur de secours peut se voir refuser la lecture plus tard : on le dit au lieu de rester muet.
+    this.sound.onFail = (reason) => {
+      this.soundOn = false;
+      this.syncToggles();
+      this.opts.onNotice?.(`Le son s’est arrêté (${reason}).`);
+      this.opts.onPrefs({ sound: false, haptics: this.hapticsOn });
+    };
     this.mode = 'intro'; // intro | run | paused | done
     this.elapsed = 0;
     this.intro = INTRO_SECONDS;
@@ -466,7 +473,8 @@ export class Session {
         this.opts.onNotice?.(`Le son n’a pas pu démarrer sur cet appareil (${this.sound.lastError || 'raison inconnue'}).`);
       } else {
         if (this.mode === 'run') this.sound.start();
-        const iphone = /iphone|ipad|ipod/i.test(navigator.userAgent);
+        // Web Audio est coupé par l'interrupteur silencieux de l'iPhone ; le lecteur audio de secours, non.
+        const iphone = /iphone|ipad|ipod/i.test(navigator.userAgent) && this.sound.kind === 'webaudio';
         this.opts.onNotice?.(iphone ? 'Son activé. Rien d’audible ? Vérifie l’interrupteur silencieux de l’iPhone.' : 'Son activé');
       }
     } else {

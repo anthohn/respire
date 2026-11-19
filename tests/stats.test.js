@@ -191,3 +191,72 @@ test('rythmes : 4 au choix, et un rythme retiré retombe sur le recommandé', ()
   assert.equal(getPreset(undefined).id, 'long');
   assert.equal(getPreset('478').id, '478');
 });
+
+import { renderCue, encodeWav, ElementSound, createSound, SAMPLE_RATE } from '../js/audio.js';
+
+// Fréquence autour de l'instant t (en s), par passages à zéro.
+const freqAt = (x, t, w = 0.1) => {
+  const a = Math.floor((t - w / 2) * SAMPLE_RATE);
+  const b = Math.floor((t + w / 2) * SAMPLE_RATE);
+  let crossings = 0;
+  for (let i = a + 1; i < b; i++) if (x[i - 1] < 0 !== x[i] < 0) crossings++;
+  return crossings / 2 / w;
+};
+const GLISSE_IN = ['glide', 330, 494, 1.3, 0.06, 2000];
+const GLISSE_OUT = ['glide', 440, 294, 1.7, 0.05, 1300];
+
+test('secours audio : l’inspiration monte, l’expiration descend', () => {
+  const up = renderCue(GLISSE_IN, 60);
+  assert.ok(freqAt(up, 1.0) > freqAt(up, 0.2) + 60, `monte : ${freqAt(up, 0.2)} → ${freqAt(up, 1.0)} Hz`);
+  const down = renderCue(GLISSE_OUT, 60);
+  assert.ok(freqAt(down, 0.2) > freqAt(down, 1.3) + 60, `descend : ${freqAt(down, 0.2)} → ${freqAt(down, 1.3)} Hz`);
+});
+
+test('secours audio : discret, sans claquement, qui commence et finit dans le silence', () => {
+  for (const spec of [GLISSE_IN, GLISSE_OUT, ['bubble', 300, 640, 0.17, 0.08], ['glide', 392, 262, 2.6, 0.05, 1200]]) {
+    const x = renderCue(spec, 100);
+    const peak = Math.max(...x.map(Math.abs));
+    assert.ok(peak > 0.005 && peak < 0.2, `niveau ${peak}`); // même à 100 %, bien en dessous de la pleine échelle
+    assert.ok(Math.abs(x[0]) < 1e-4 && Math.abs(x[x.length - 1]) < 1e-4, 'départ et fin à zéro');
+    let jump = 0;
+    for (let i = 1; i < x.length; i++) jump = Math.max(jump, Math.abs(x[i] - x[i - 1]));
+    // Un sinus de ~1 kHz à 22 kHz d'échantillonnage saute d'au plus ~0,3× son niveau ; un claquement approcherait 1×.
+    assert.ok(jump < peak * 0.4, `saut maximal ${jump} pour un niveau de ${peak}`);
+  }
+  assert.ok(renderCue(GLISSE_IN, 0).every((v) => v === 0), 'volume 0 = silence');
+  const quiet = Math.max(...renderCue(GLISSE_IN, 30).map(Math.abs));
+  const loud = Math.max(...renderCue(GLISSE_IN, 90).map(Math.abs));
+  assert.ok(loud > quiet * 1.5, 'le volume joue sur le niveau (iOS ignore le volume des éléments audio)');
+});
+
+test('secours audio : fichier WAV valide', () => {
+  const x = renderCue(GLISSE_IN, 60);
+  const wav = encodeWav(x);
+  const view = new DataView(wav.buffer);
+  const text = (o, n) => String.fromCharCode(...wav.slice(o, o + n));
+  assert.equal(text(0, 4), 'RIFF');
+  assert.equal(text(8, 4), 'WAVE');
+  assert.equal(text(36, 4), 'data');
+  assert.equal(wav.length, 44 + x.length * 2);
+  assert.equal(view.getUint32(24, true), SAMPLE_RATE);
+  assert.equal(view.getUint16(22, true), 1, 'mono');
+  assert.equal(view.getUint16(34, true), 16, '16 bits');
+  assert.equal(view.getUint32(40, true), x.length * 2);
+  for (const i of [0, 1000, 5000, x.length - 1]) assert.ok(Math.abs(view.getInt16(44 + i * 2, true) / 32767 - x[i]) < 1e-4);
+});
+
+test('secours audio : sans lecteur audio, le bouton le dit au lieu de planter', async () => {
+  const s = createSound(); // pas de fenêtre ni de Web Audio ici : moteur de secours
+  assert.ok(s instanceof ElementSound);
+  assert.doesNotThrow(() => {
+    s.start();
+    s.cue('inhale', 0);
+    s.chime('start');
+    s.update(0.5);
+    s.setVolume(40);
+    s.setMode('bulle');
+    s.stop();
+  });
+  assert.equal(await s.unlock(), false);
+  assert.equal(s.lastError, 'son indisponible');
+});
