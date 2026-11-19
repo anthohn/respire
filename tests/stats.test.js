@@ -1,0 +1,145 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { addDays, streakInfo, weekKeys, levelInfo, earnedBadgeIds, buildStats, formatDuration, formatClock } from '../js/stats.js';
+import { PRESETS, sessionPlan, phaseAt, cycleLength } from '../js/breath.js';
+
+const TODAY = '2026-11-19'; // jeudi
+const s = (date, seconds = 300) => ({ date, seconds });
+const days = (...offsets) => offsets.map((n) => s(addDays(TODAY, n)));
+
+test('série : jours consécutifs, aujourd’hui compris', () => {
+  const info = streakInfo(days(0, -1, -2), TODAY);
+  assert.equal(info.current, 3);
+  assert.equal(info.todayDone, true);
+  assert.equal(info.atRisk, false);
+});
+
+test('série : aujourd’hui pas encore fait ne casse pas la série', () => {
+  const info = streakInfo(days(-1, -2, -3), TODAY);
+  assert.equal(info.current, 3);
+  assert.equal(info.todayDone, false);
+  assert.equal(info.atRisk, true);
+});
+
+test('série : un jour de repos est offert', () => {
+  // aujourd'hui, (hier manqué), avant-hier, il y a 3 jours
+  const info = streakInfo(days(0, -2, -3), TODAY);
+  assert.equal(info.current, 3);
+  assert.deepEqual([...info.rest], [addDays(TODAY, -1)]);
+});
+
+test('série : deux jours manqués d’affilée cassent la série', () => {
+  const info = streakInfo(days(0, -3, -4), TODAY);
+  assert.equal(info.current, 1);
+});
+
+test('série : un seul jour de repos par fenêtre de 7 jours', () => {
+  // actifs : 0, -2 (repos -1), -4 (repos -3 refusé car trop proche)
+  const info = streakInfo(days(0, -2, -4), TODAY);
+  assert.equal(info.current, 2);
+});
+
+test('série : deux jours de repos espacés de 7 jours sont acceptés', () => {
+  const offsets = [0, -2, -3, -4, -5, -6, -7, -8, -10];
+  const info = streakInfo(days(...offsets), TODAY);
+  assert.equal(info.current, 9);
+  assert.equal(info.rest.size, 2);
+});
+
+test('série : hier en repos, aujourd’hui à faire = série vivante mais fragile', () => {
+  const info = streakInfo(days(-2, -3), TODAY);
+  assert.equal(info.current, 2);
+  assert.equal(info.yesterdayRest, true);
+  assert.equal(info.atRisk, true);
+});
+
+test('série : moins d’une minute ne compte pas', () => {
+  const info = streakInfo([s(TODAY, 40)], TODAY);
+  assert.equal(info.current, 0);
+  assert.equal(info.todayDone, false);
+});
+
+test('série : plusieurs petites sessions le même jour s’additionnent', () => {
+  const info = streakInfo([s(TODAY, 35), s(TODAY, 35)], TODAY);
+  assert.equal(info.todayDone, true);
+  assert.equal(info.current, 1);
+});
+
+test('meilleure série conservée après une coupure', () => {
+  const info = streakInfo(days(0, -1, -20, -21, -22, -23, -24), TODAY);
+  assert.equal(info.current, 2);
+  assert.equal(info.best, 5);
+});
+
+test('semaine : du lundi au dimanche', () => {
+  const week = weekKeys(TODAY);
+  assert.equal(week.length, 7);
+  assert.equal(week[0], '2026-11-16');
+  assert.equal(week[6], '2026-11-22');
+});
+
+test('niveaux : progression', () => {
+  assert.equal(levelInfo(0).level.name, 'Graine');
+  assert.equal(levelInfo(14).level.name, 'Graine');
+  assert.equal(levelInfo(15).level.name, 'Pousse');
+  assert.equal(levelInfo(15).toNext, 30);
+  assert.equal(levelInfo(5000).next, null);
+  assert.equal(levelInfo(5000).progress, 1);
+});
+
+test('trophées', () => {
+  const stats = buildStats(days(0, -1, -2), TODAY);
+  const ids = earnedBadgeIds(stats);
+  assert.ok(ids.includes('first'));
+  assert.ok(ids.includes('streak-3'));
+  assert.ok(!ids.includes('streak-7'));
+});
+
+test('formats de durée', () => {
+  assert.equal(formatDuration(45), '45 s');
+  assert.equal(formatDuration(60), '1 min');
+  assert.equal(formatDuration(125), '2 min 05');
+  assert.equal(formatDuration(600), '10 min');
+  assert.equal(formatDuration(3900), '1 h 05');
+  assert.equal(formatClock(61.2), '1:02');
+  assert.equal(formatClock(0), '0:00');
+});
+
+test('séance : nombre de cycles et durée réelle', () => {
+  const long = PRESETS.find((p) => p.id === 'long');
+  assert.deepEqual(sessionPlan(long, 5), { cycles: 30, totalSeconds: 300 });
+  const calm = PRESETS.find((p) => p.id === 'calm'); // cycle de 12 s
+  assert.deepEqual(sessionPlan(calm, 1), { cycles: 5, totalSeconds: 60 });
+});
+
+test('respiration : la courbe monte, tient, redescend', () => {
+  const calm = PRESETS.find((p) => p.id === 'calm'); // 4 / 2 / 6
+  assert.equal(cycleLength(calm), 12);
+  assert.equal(phaseAt(calm, 0).phase, 'inhale');
+  assert.equal(phaseAt(calm, 0).breath, 0);
+  assert.equal(phaseAt(calm, 4).phase, 'hold1');
+  assert.equal(phaseAt(calm, 5).breath, 1);
+  assert.equal(phaseAt(calm, 6).phase, 'exhale');
+  assert.ok(Math.abs(phaseAt(calm, 9).breath - 0.5) < 1e-9);
+  assert.equal(phaseAt(calm, 12).phase, 'inhale');
+  assert.equal(phaseAt(calm, 12).cycle, 1);
+});
+
+import { journeyLayout, STEPS } from '../js/journey.js';
+
+test('ascension : le marqueur suit la série', () => {
+  const start = journeyLayout(0);
+  assert.equal(start.marker.x, start.pts[0].x);
+  assert.equal(start.marker.y, start.pts[0].y);
+  assert.equal(start.done, `M ${start.pts[0].x.toFixed(1)} ${start.pts[0].y.toFixed(1)}`);
+
+  const onStep = journeyLayout(3);
+  assert.ok(Math.abs(onStep.marker.y - onStep.pts[1].y) < 1e-9);
+
+  const mid = journeyLayout(5); // entre 3 et 7
+  assert.ok(mid.marker.y < onStep.pts[1].y && mid.marker.y > onStep.pts[2].y);
+
+  const summit = journeyLayout(250);
+  assert.equal(summit.marker.y, summit.pts[STEPS.length - 1].y);
+  assert.equal(summit.done, summit.full);
+});
