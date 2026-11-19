@@ -471,15 +471,11 @@ export class Session {
         this.soundOn = false;
         this.syncToggles();
         this.opts.onNotice?.(`Le son n’a pas pu démarrer sur cet appareil (${this.sound.lastError || 'raison inconnue'}).`);
-      } else {
-        if (this.mode === 'run') this.sound.start();
-        // Web Audio est coupé par l'interrupteur silencieux de l'iPhone ; le lecteur audio de secours, non.
-        const iphone = /iphone|ipad|ipod/i.test(navigator.userAgent) && this.sound.kind === 'webaudio';
-        this.opts.onNotice?.(iphone ? 'Son activé. Rien d’audible ? Vérifie l’interrupteur silencieux de l’iPhone.' : 'Son activé');
+      } else if (this.mode === 'run') {
+        this.sound.start();
       }
     } else {
       this.sound.stop();
-      this.opts.onNotice?.('Son coupé');
     }
     this.opts.onPrefs({ sound: this.soundOn, haptics: this.hapticsOn });
   }
