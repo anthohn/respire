@@ -12,7 +12,6 @@ import { Aura } from './aura.js';
 
 const INTRO_SECONDS = 4.5;
 const SCALE_MIN = 0.56;
-const RING_C = 2 * Math.PI * 48.5;
 /** Un trou plus long entre deux « tops » = ordinateur en veille ou onglet gelé : ce temps ne compte pas. */
 const SLEEP_GAP_MS = 3000;
 const chevron = `<span class="cta-ico">${icon.chevronRight(20)}</span>`;
@@ -82,9 +81,6 @@ export class Session {
     this.warmEl = this.root.querySelector('.orb-warm');
     this.haloEl = this.root.querySelector('.orb-halo');
     this.ripples = [...this.root.querySelectorAll('.orb-ripple')];
-    this.ringBar = this.root.querySelector('.s-ring .bar');
-    this.ringBar.style.strokeDasharray = RING_C.toFixed(2);
-    this.ringBar.style.strokeDashoffset = RING_C.toFixed(2);
     this.setupAura();
 
     this.onClick = (e) => {
@@ -179,10 +175,6 @@ export class Session {
       <div class="s-stage" data-s="toggle">
         <div class="s-orb-wrap">
           ${orb('live')}
-          <svg class="s-ring" viewBox="0 0 100 100" aria-hidden="true">
-            <circle class="track" cx="50" cy="50" r="48.5"/>
-            <circle class="bar" cx="50" cy="50" r="48.5" transform="rotate(-90 50 50)"/>
-          </svg>
           <div class="s-center">
             <div class="s-phase swap" data-el="phase">Prépare-toi</div>
             <div class="s-count" data-el="count"></div>
@@ -292,7 +284,6 @@ export class Session {
     this.text('count', left);
     this.text('remaining', formatClock(this.total - t));
     this.text('cycles', `Respiration ${Math.min(p.cycle + 1, this.cycles)} sur ${this.cycles}`);
-    this.ringBar.style.strokeDashoffset = (RING_C * (1 - t / this.total)).toFixed(2);
     // Le titre de l'onglet suit la session : on la voit même quand l'onglet est caché.
     this.setTitle(`${PHASE_LABEL[p.phase]} · ${formatClock(this.total - t)}`);
 
@@ -576,7 +567,6 @@ export class Session {
   complete() {
     this.elapsed = this.total;
     this.paint(0, this.total);
-    this.ringBar.style.strokeDashoffset = '0';
     this.end(true);
     this.shown.title = '';
     if (!this.pipWin) document.title = 'Session terminée — Respire';

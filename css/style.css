@@ -123,7 +123,7 @@ body {
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
 }
-body.in-session { overflow: hidden; }
+body.in-session, body.sheet-open { overflow: hidden; }
 h1, h2, h3, p, ul, ol { margin: 0; padding: 0; }
 ul, ol { list-style: none; }
 button, input { font: inherit; color: inherit; }
@@ -617,6 +617,7 @@ body.in-session .tabbar { display: none; }
 .sheet-body .list-title { margin-top: 20px; }
 
 /* Un rythme à la fois : la bulle respire pour de vrai, on le ressent avant de le lancer. */
+.sheet { overscroll-behavior: contain; }
 .sheet-panel { overflow-x: clip; }
 .sheet-grip, .sheet-head, .sheet-foot { flex: none; }
 .sheet-head { position: relative; z-index: 2; padding-bottom: 0; }
@@ -626,19 +627,17 @@ body.in-session .tabbar { display: none; }
   --drag: 0px;
   position: relative; z-index: 1; flex: none;
   display: flex; flex-direction: column; align-items: center; text-align: center;
-  padding: 0 18px; touch-action: pan-y; user-select: none; -webkit-user-select: none;
+  padding: 0 18px; touch-action: none; user-select: none; -webkit-user-select: none;
   --accent: var(--core1); --accent-2: var(--core2);
 }
-.rhythm-stage { position: relative; width: 100%; display: flex; justify-content: center; padding: 34px 0 20px; }
+.rhythm-stage { position: relative; width: 100%; display: flex; justify-content: center; align-items: center; gap: 30px; padding: 34px 0 20px; }
 .rhythm-orb { position: relative; width: 168px; aspect-ratio: 1; transform: translateX(var(--drag)); transition: transform 0.5s var(--ease); }
 /* La bulle en CSS n'est qu'un secours : quand WebGL tourne, on la retire (ses ondes déborderaient de la feuille). */
 .rhythm-orb.webgl .orb-stage { display: none; }
 .rz-arrow {
-  position: absolute; top: 50%; translate: 0 -50%; width: 44px; height: 44px; border-radius: 50%;
+  flex: none; width: 44px; height: 44px; border-radius: 50%;
   display: grid; place-items: center; color: var(--faint); transition: color 0.25s, background 0.25s;
 }
-.rz-arrow.prev { left: -8px; }
-.rz-arrow.next { right: -8px; }
 .rz-arrow:hover { color: var(--ink); background: var(--glass); }
 @media (hover: none), (pointer: coarse) { .rz-arrow { display: none; } }
 
@@ -672,6 +671,15 @@ body.in-session .tabbar { display: none; }
 .rhythm[data-rhythm='478'] {
   --a2: #c9c4ff; --v1: #2a35c8; --v2: #5b34c4; --v3: #1f78b8; --v4: #2a2090; --v5: #8a6cff; --core1: #5560ff; --core2: #9a8cff;
   --accent: var(--core1); --accent-2: var(--core2);
+}
+@media (min-width: 520px) {
+  .sheet-panel {
+    top: calc(50% - 12px); bottom: auto; max-height: calc(100dvh - 48px);
+    border-radius: 32px; border-bottom: 1px solid var(--hair);
+    opacity: 0; transform: translate(-50%, calc(-50% + 36px));
+    transition: transform 0.5s var(--ease), opacity 0.35s;
+  }
+  .sheet.open .sheet-panel { opacity: 1; transform: translate(-50%, -50%); }
 }
 @media (max-height: 720px) {
   .sheet-head { padding-top: 4px; }
@@ -728,10 +736,6 @@ body.in-session .tabbar { display: none; }
 .s-stage { flex: 1; min-height: 0; display: grid; place-items: center; cursor: pointer; }
 .s-orb-wrap { position: relative; width: min(80vw, 50dvh, 420px); aspect-ratio: 1; }
 .s-orb-wrap .orb-stage { position: absolute; inset: 0; }
-.s-ring { position: absolute; inset: -4%; width: 108%; height: 108%; overflow: visible; }
-.s-ring circle { fill: none; stroke-width: 0.9; }
-.s-ring .track { stroke: rgba(255, 255, 255, 0.1); }
-.s-ring .bar { stroke: rgba(255, 255, 255, 0.7); stroke-linecap: round; }
 
 .s-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; pointer-events: none; text-shadow: 0 2px 26px rgba(8, 14, 50, 0.6); }
 .s-phase { font-size: clamp(34px, 9.4vw, 48px); font-weight: 250; letter-spacing: -0.02em; color: #fff; text-shadow: 0 1px 2px rgba(6, 12, 40, 0.35), 0 2px 26px rgba(6, 12, 40, 0.55); }

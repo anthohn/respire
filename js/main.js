@@ -197,6 +197,7 @@ function openSheet() {
     <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">${sheetView(context())}</div>`;
   void sheetEl.offsetWidth;
   sheetEl.classList.add('open');
+  document.body.classList.add('sheet-open'); // la page derrière ne défile plus
   mountSheetOrb();
 }
 
@@ -319,6 +320,7 @@ function stepRhythm(dir) {
 
 function closeSheet({ instant = false } = {}) {
   sheetEl.classList.remove('open');
+  document.body.classList.remove('sheet-open');
   const done = () => {
     unmountSheetOrb();
     sheetEl.hidden = true;
