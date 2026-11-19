@@ -20,7 +20,7 @@
   --radius: 28px;
 
   --a1: #a9d8ff; --a2: #c9c0ff; --a3: #bdf2e0; --a4: #ffe0c2;
-  --v1: #2f7bff; --v2: #7a5cff; --v3: #19c3c3; --v4: #4aa8ff;
+  --v1: #2f7bff; --v2: #7a5cff; --v3: #19c3c3; --v4: #4aa8ff; --v5: #ff9f7a;
   --core1: #3b8cff; --core2: #62d8ff;
 
   --warm: #ff9a3c;
@@ -29,17 +29,17 @@
 }
 html[data-tod='morning'] {
   --a1: #ffd2b0; --a2: #ffe9a8; --a3: #ffb8c6; --a4: #cfe6ff;
-  --v1: #ff7a59; --v2: #ffb347; --v3: #ff5d8f; --v4: #5b7cff;
+  --v1: #ff7a59; --v2: #ffb347; --v3: #ff5d8f; --v4: #5b7cff; --v5: #7fb0ff;
   --core1: #ff7f5c; --core2: #ffc46b;
 }
 html[data-tod='evening'] {
   --a1: #ffb3d1; --a2: #c3b0ff; --a3: #ffd0b0; --a4: #a9b6ff;
-  --v1: #b04cff; --v2: #ff5fa2; --v3: #6a5cff; --v4: #ff8a5c;
+  --v1: #b04cff; --v2: #ff5fa2; --v3: #6a5cff; --v4: #ff8a5c; --v5: #ffc979;
   --core1: #9a6bff; --core2: #ff82b8;
 }
 html[data-tod='night'] {
   --a1: #b9c4ff; --a2: #d4c2ff; --a3: #b4e6ee; --a4: #e5d5ff;
-  --v1: #2f3fd0; --v2: #6a40d0; --v3: #1f9fb8; --v4: #3a2a8c;
+  --v1: #2f3fd0; --v2: #6a40d0; --v3: #1f9fb8; --v4: #3a2a8c; --v5: #ff6fb8;
   --core1: #5b6cff; --core2: #4fd0e0;
 }
 
@@ -684,7 +684,7 @@ body.in-session .tabbar { display: none; }
 .s-ring .bar { stroke: rgba(255, 255, 255, 0.7); stroke-linecap: round; }
 
 .s-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; pointer-events: none; text-shadow: 0 2px 26px rgba(8, 14, 50, 0.6); }
-.s-phase { font-size: clamp(34px, 9.4vw, 48px); font-weight: 250; letter-spacing: -0.02em; color: #fff; }
+.s-phase { font-size: clamp(34px, 9.4vw, 48px); font-weight: 250; letter-spacing: -0.02em; color: #fff; text-shadow: 0 1px 2px rgba(6, 12, 40, 0.35), 0 2px 26px rgba(6, 12, 40, 0.55); }
 .s-count { font-weight: 700; font-size: 20px; color: rgba(255, 255, 255, 0.85); min-height: 28px; font-variant-numeric: tabular-nums; }
 .swap { animation: swap 0.9s var(--ease) both; }
 @keyframes swap { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
@@ -860,3 +860,15 @@ body.in-session .tabbar { display: none; }
 .away-orb { width: 150px; }
 .away-card h2 { font-weight: 300; font-size: 30px; letter-spacing: -0.02em; line-height: 1.15; }
 .away-card p { color: var(--muted); margin-bottom: 6px; }
+
+/* ---------- Aura WebGL (fond de la session) ---------- */
+.aura-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+.session.webgl { background: #05070f; }
+.session.webgl .s-bg { display: none; }
+.session.webgl .s-orb-wrap .orb-stage,
+.session.webgl .done-orb .orb-stage { visibility: hidden; }
+
+/* ---------- Bulle vivante de l'accueil ---------- */
+.hero-orb { position: relative; }
+.hero-aura { position: absolute; inset: -26%; width: 152%; height: 152%; display: block; pointer-events: none; }
+.hero-orb.webgl .orb-stage { visibility: hidden; }

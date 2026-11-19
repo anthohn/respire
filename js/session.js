@@ -8,6 +8,7 @@ import { formatClock, formatDuration, MIN_SECONDS } from './stats.js';
 import { icon } from './icons.js';
 import { orb, esc } from './views.js';
 import { isDesktop, pipSupported, openPipWindow } from './pip.js';
+import { Aura } from './aura.js';
 
 const INTRO_SECONDS = 4.5;
 const SCALE_MIN = 0.56;
@@ -58,6 +59,11 @@ export class Session {
     this.away = null;
     this.ticker = null;
     this.baseTitle = document.title;
+    this.aura = null; // fond WebGL (null = orbe CSS de secours)
+    this.auraBreath = 0;
+    this.auraKey = '';
+    this.target = null;
+    this.cur = null;
   }
 
   // ---------- Cycle de vie ----------
@@ -76,6 +82,7 @@ export class Session {
     this.ringBar = this.root.querySelector('.s-ring .bar');
     this.ringBar.style.strokeDasharray = RING_C.toFixed(2);
     this.ringBar.style.strokeDashoffset = RING_C.toFixed(2);
+    this.setupAura();
 
     this.onClick = (e) => {
       const el = e.target.closest('[data-s]');
@@ -128,6 +135,8 @@ export class Session {
     cancelAnimationFrame(this.raf);
     this.win.cancelAnimationFrame(this.raf);
     this.stopTicker();
+    this.aura?.destroy();
+    this.aura = null;
     this.away?.remove();
     this.root.removeEventListener('click', this.onClick);
     document.removeEventListener('keydown', this.onKey);
@@ -152,6 +161,7 @@ export class Session {
     const p = this.opts.preset;
     return `
     <div class="s-bg" aria-hidden="true"></div>
+    <canvas class="aura-canvas" aria-hidden="true"></canvas>
     <div class="s-inner" role="dialog" aria-modal="true" aria-label="Session de respiration" tabindex="-1">
       <header class="s-top">
         <button class="icon-btn" data-s="close" aria-label="Quitter la session">${icon.close(22)}</button>
@@ -198,6 +208,7 @@ export class Session {
   loop = () => {
     this.raf = this.win.requestAnimationFrame(this.loop);
     this.step(performance.now());
+    this.drawAura();
   };
 
   /** Métronome indépendant de l'affichage : un onglet caché n'anime plus rien, mais ce « tic » continue. */
@@ -299,6 +310,8 @@ export class Session {
     label.classList.add('swap');
     const hints = HINTS[p.phase];
     this.setHint(hints[p.cycle % hints.length]);
+    if (p.phase === 'inhale') this.aura?.pulse(1);
+    else if (p.phase === 'exhale') this.aura?.pulse(-1);
     if (this.hapticsOn) {
       if (p.phase === 'inhale') vibrate(38);
       else if (p.phase === 'exhale') vibrate(22);
@@ -306,6 +319,8 @@ export class Session {
   }
 
   paint(b, t) {
+    this.auraBreath = b;
+    if (this.aura) return; // l'aura WebGL se dessine à chaque image (drawAura)
     const s = SCALE_MIN + (1 - SCALE_MIN) * b;
     this.orbEl.style.transform = `scale(${s.toFixed(4)})`;
     this.warmEl.style.opacity = b.toFixed(3);
@@ -316,6 +331,66 @@ export class Session {
       el.style.transform = `scale(${(SCALE_MIN + (1 - SCALE_MIN) * bi + 0.05 * (i + 1)).toFixed(4)})`;
       el.style.opacity = (0.5 * bi * (1 - i * 0.28)).toFixed(3);
     });
+  }
+
+  // ---------- Aura (WebGL) ----------
+
+  setupAura() {
+    const canvas = this.root.querySelector('.aura-canvas');
+    const aura = canvas ? Aura.create(canvas, { full: true }) : null;
+    if (!aura) {
+      canvas?.remove();
+      return;
+    }
+    this.aura = aura;
+    aura.onLost = () => this.dropAura();
+    this.root.classList.add('webgl');
+  }
+
+  /** WebGL perdu (carte graphique réinitialisée) : on revient à l'orbe CSS. */
+  dropAura() {
+    this.aura?.destroy();
+    this.aura = null;
+    this.root.classList.remove('webgl');
+    this.root.querySelector('.aura-canvas')?.remove();
+  }
+
+  /** Repère, dans le canvas, l'élément que la bulle doit habiter (la zone de respiration, puis l'icône de fin). */
+  fitAura() {
+    const aura = this.aura;
+    const canvas = aura.canvas;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    if (!w || !h) return;
+    aura.resize(w, h, this.win.devicePixelRatio || 1);
+    const el = this.root.querySelector(this.mode === 'done' ? '.done-orb' : '.s-orb-wrap');
+    if (!el) return;
+    const cr = canvas.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    this.target = { cx: r.left - cr.left + r.width / 2, cy: r.top - cr.top + r.height / 2, W: r.width };
+    if (!this.cur) this.cur = { ...this.target };
+  }
+
+  drawAura() {
+    const aura = this.aura;
+    if (!aura || (document.hidden && !this.pipWin)) return;
+    const canvas = aura.canvas;
+    const done = this.mode === 'done';
+    const key = `${canvas.clientWidth}x${canvas.clientHeight}:${done ? 'd' : 'r'}:${this.pipWin ? 'p' : 'm'}`;
+    if (key !== this.auraKey) {
+      this.auraKey = key;
+      this.fitAura();
+    }
+    if (!this.target) return;
+    // La bulle glisse en douceur vers sa nouvelle place (par exemple vers l'icône de fin).
+    const k = 0.12;
+    this.cur.cx += (this.target.cx - this.cur.cx) * k;
+    this.cur.cy += (this.target.cy - this.cur.cy) * k;
+    this.cur.W += (this.target.W - this.cur.W) * k;
+    const b = done ? 0.55 + 0.18 * Math.sin(performance.now() / 1600) : this.auraBreath;
+    const radius = this.cur.W * 0.5 * (done ? 0.8 : 0.52 + 0.4 * b);
+    aura.setBubble(this.cur.cx, this.cur.cy, radius);
+    aura.draw(b);
   }
 
   /** Met à jour le texte d'un élément seulement s'il change (évite du travail à chaque image). */
@@ -501,7 +576,6 @@ export class Session {
 
   end() {
     this.mode = 'done';
-    this.win.cancelAnimationFrame(this.raf);
     this.stopTicker();
     this.sound.stopPad();
     try {
@@ -574,7 +648,7 @@ export class Session {
     document.title = this.mode === 'done' ? 'Session terminée — Respire' : this.baseTitle;
 
     this.win = window;
-    if (this.mode !== 'done') this.raf = window.requestAnimationFrame(this.loop);
+    this.raf = window.requestAnimationFrame(this.loop);
     try {
       pw.close();
     } catch {

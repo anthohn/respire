@@ -106,7 +106,7 @@ export function homeView(c) {
   const nd = nudge({ stats, hour: now.getHours(), minToday, goal });
   const showNudge = nd.tone === 'warn' || stats.sessions === 0;
   const doneDays = weekKeys(today).filter((k) => st.active.has(k)).length;
-  const cta = st.todayDone ? 'Une autre session' : stats.sessions === 0 ? 'Commencer ma première session' : 'Commencer';
+  const cta = st.todayDone ? 'Une autre session' : stats.sessions === 0 ? 'Ma première session' : 'Commencer';
 
   return `
   <header class="home-head rise">

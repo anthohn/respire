@@ -2,11 +2,12 @@
 
 import { load, save, reset } from './store.js';
 import { dayKey, buildStats, levelInfo, earnedBadgeIds, minutesOn, BADGES } from './stats.js';
-import { getPreset } from './breath.js';
+import { getPreset, phaseAt } from './breath.js';
 import { tipOfTheDay, finishMessage } from './content.js';
 import { homeView, progressView, settingsView, sheetView, doneView, onboardingView } from './views.js';
 import { Session } from './session.js';
 import { pipSupported } from './pip.js';
+import { Aura } from './aura.js';
 
 let state = load();
 const ui = {
@@ -51,6 +52,7 @@ const views = { home: homeView, progress: progressView, settings: settingsView }
 
 function render({ animate = true, keepScroll = false } = {}) {
   const scroll = window.scrollY;
+  unmountHero();
   applyMoment();
   view.classList.toggle('no-anim', !animate);
   view.innerHTML = views[ui.tab](context());
@@ -60,6 +62,58 @@ function render({ animate = true, keepScroll = false } = {}) {
     tab.setAttribute('aria-current', on ? 'page' : 'false');
   });
   window.scrollTo(0, keepScroll ? scroll : 0);
+  if (ui.tab === 'home') mountHero();
+}
+
+// ---------- Bulle de l'accueil ----------
+
+let hero = null;
+
+function unmountHero() {
+  if (!hero) return;
+  cancelAnimationFrame(hero.raf);
+  hero.aura.destroy();
+  hero = null;
+}
+
+function mountHero() {
+  const host = view.querySelector('.hero-orb');
+  if (!host) return;
+  const canvas = document.createElement('canvas');
+  canvas.className = 'hero-aura';
+  canvas.setAttribute('aria-hidden', 'true');
+  host.append(canvas);
+  const aura = Aura.create(canvas, { full: false, pixelRatio: 1 });
+  if (!aura) {
+    canvas.remove();
+    return;
+  }
+  host.classList.add('webgl');
+  const preset = getPreset(state.settings.presetId);
+  const t0 = performance.now();
+  let size = '';
+  let phase = '';
+  const state_ = (hero = { aura, raf: 0 });
+  const loop = () => {
+    state_.raf = requestAnimationFrame(loop);
+    if (document.hidden || session) return; // pas de calcul inutile quand on ne la voit pas
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    if (!w || !h) return;
+    if (`${w}x${h}` !== size) {
+      size = `${w}x${h}`;
+      aura.resize(w, h, window.devicePixelRatio || 1);
+    }
+    const p = phaseAt(preset, (performance.now() - t0) / 1000);
+    if (p.phase !== phase) {
+      phase = p.phase;
+      if (phase === 'inhale') aura.pulse(1);
+      else if (phase === 'exhale') aura.pulse(-1);
+    }
+    aura.setBubble(w / 2, h / 2, host.clientWidth * 0.5 * (0.52 + 0.4 * p.breath));
+    aura.draw(p.breath);
+  };
+  loop();
 }
 
 function applyTheme() {
