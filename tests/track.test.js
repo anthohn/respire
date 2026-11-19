@@ -175,3 +175,33 @@ test('piste en boucle : un 4-7-8 donne aussi un tour d’environ quatre minutes'
   assert.equal(n % 3, 0);
   assert.ok(n * 19 > 150 && n * 19 < 330);
 });
+
+import { sessionPlan, DURATIONS, durationLabel } from '../js/breath.js';
+
+for (const style of ['vague', 'nappe', 'reperes']) {
+  test(`séance longue « ${style} » : la retombée est courte, finit dans le silence et n'ajoute pas de claquement`, async () => {
+    const p = preset('long');
+    const { pcm, rate, plan } = await renderTrack({ preset: p, cycles: 0, lead: 0, style });
+    assert.equal(plan.cycles, 0);
+    assert.equal(plan.total, TAIL);
+    assert.equal(pcm.length, TAIL * rate);
+    assert.ok(Math.abs(pcm[pcm.length - 1]) < 60, 'finit dans le silence');
+    const peak = peakOf(pcm);
+    assert.ok(peak > 0.02 && peak <= 0.5, `niveau ${peak}`);
+    let jump = 0;
+    for (let i = 1; i < pcm.length; i++) jump = Math.max(jump, Math.abs(pcm[i] - pcm[i - 1]) / 32768);
+    assert.ok(jump < peak * 0.5, `saut ${jump} pour un niveau de ${peak}`);
+  });
+}
+
+test('1 h : une durée de plus, lisible, qui compte pour la série comme les autres', () => {
+  assert.deepEqual(DURATIONS, [1, 3, 5, 10, 60, 0]);
+  assert.equal(durationLabel(60), '1 h');
+  assert.equal(durationLabel(10), '10 min');
+  assert.equal(durationLabel(0), 'sans limite');
+  const long = preset('long');
+  assert.deepEqual(sessionPlan(long, 60), { cycles: 360, totalSeconds: 3600 });
+  const p478 = preset('478'); // 19 s par cycle : on finit sur une expiration complète, au plus près de l'heure
+  const plan = sessionPlan(p478, 60);
+  assert.ok(Math.abs(plan.totalSeconds - 3600) <= 19);
+});

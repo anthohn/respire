@@ -1,7 +1,7 @@
 // Vues : chaque fonction renvoie du HTML à partir de l'état. Aucune logique d'événement ici.
 
 import { icon } from './icons.js';
-import { PRESETS, DURATIONS, UNLIMITED, isUnlimited, getPreset, patternLabel, sessionPlan } from './breath.js';
+import { PRESETS, DURATIONS, UNLIMITED, durationLabel, getPreset, patternLabel, sessionPlan } from './breath.js';
 import {
   BADGES, LEVELS, levelInfo, weekKeys, minutesOn, formatDuration, parseKey, dayKey, earnedBadgeIds,
 } from './stats.js';
@@ -123,8 +123,8 @@ export function homeView(c) {
     <p class="lede">${lede({ stats, hour: now.getHours() })}</p>
     <button class="hero-orb" data-action="start" aria-label="Commencer une session">${orb('idle')}</button>
     <button class="hero-hint" data-action="start" tabindex="-1" aria-hidden="true">Touche la bulle pour respirer</button>
-    <button class="session-chip" data-action="open-sheet" aria-label="Modifier la session : ${esc(preset.name)}, ${patternLabel(preset)}, ${isUnlimited(minutes) ? 'sans limite' : `${minutes} minutes`}">
-      <span><b>${esc(preset.name)}</b> <i>·</i> ${patternLabel(preset)} <i>·</i> ${isUnlimited(minutes) ? 'sans limite' : `${minutes} min`}</span>${icon.settings(16)}
+    <button class="session-chip" data-action="open-sheet" aria-label="Modifier la session : ${esc(preset.name)}, ${patternLabel(preset)}, ${durationLabel(minutes)}">
+      <span><b>${esc(preset.name)}</b> <i>·</i> ${patternLabel(preset)} <i>·</i> ${durationLabel(minutes)}</span>${icon.settings(16)}
     </button>
   </section>
 
@@ -671,8 +671,8 @@ export function sheetView(c, { dir = 0 } = {}) {
   </section>
 
   <div class="sheet-body">
-    <div class="seg big" role="radiogroup" aria-label="Durée">
-      ${DURATIONS.map((d) => `<button role="radio" aria-checked="${d === s.minutes}" class="${d === s.minutes ? 'on' : ''}" data-action="pick-minutes" data-min="${d}" ${d === UNLIMITED ? 'aria-label="Sans limite"' : ''}>${d === UNLIMITED ? 'Libre' : `${d} min`}</button>`).join('')}
+    <div class="seg big dense" role="radiogroup" aria-label="Durée">
+      ${DURATIONS.map((d) => `<button role="radio" aria-checked="${d === s.minutes}" class="${d === s.minutes ? 'on' : ''}" data-action="pick-minutes" data-min="${d}" ${d === UNLIMITED ? 'aria-label="Sans limite"' : ''}>${d === UNLIMITED ? 'Libre' : durationLabel(d)}</button>`).join('')}
     </div>
   </div>
 

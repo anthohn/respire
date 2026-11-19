@@ -101,6 +101,8 @@ test('formats de durée', () => {
   assert.equal(formatDuration(125), '2 min 05');
   assert.equal(formatDuration(600), '10 min');
   assert.equal(formatDuration(3900), '1 h 05');
+  assert.equal(formatDuration(3600), '1 h');
+  assert.equal(formatDuration(7200), '2 h');
   assert.equal(formatClock(61.2), '1:02');
   assert.equal(formatClock(0), '0:00');
 });

@@ -164,7 +164,7 @@ export function formatDuration(seconds) {
     return rest && m < 10 ? `${m} min ${String(rest).padStart(2, '0')}` : `${m} min`;
   }
   const h = Math.floor(m / 60);
-  return `${h} h ${String(m % 60).padStart(2, '0')}`;
+  return m % 60 ? `${h} h ${String(m % 60).padStart(2, '0')}` : `${h} h`; // « 1 h » pile, « 1 h 05 » sinon
 }
 
 export function formatClock(seconds) {

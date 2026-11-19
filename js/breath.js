@@ -30,7 +30,10 @@ export const PRESETS = [
 
 /** Durée « libre » : la session ne s'arrête pas toute seule, on la termine quand on veut. */
 export const UNLIMITED = 0;
-export const DURATIONS = [1, 3, 5, 10, UNLIMITED];
+export const DURATIONS = [1, 3, 5, 10, 60, UNLIMITED];
+
+/** « 10 min », « 1 h », « sans limite » : la durée telle qu'on la lit. */
+export const durationLabel = (minutes) => (isUnlimited(minutes) ? 'sans limite' : minutes >= 60 && minutes % 60 === 0 ? `${minutes / 60} h` : `${minutes} min`);
 
 export const isUnlimited = (minutes) => !(minutes > 0);
 

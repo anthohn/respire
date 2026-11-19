@@ -9,6 +9,9 @@ import { formatDuration } from './stats.js';
 import { renderTrack, wavBlob, TRACK_RATE, LEAD } from './track.js';
 
 const TAIL_GRACE_MS = 9000; // après la fin de la séance, on laisse sonner la retombée, puis on libère tout
+// Au-delà de cette durée, la séance n'est pas un seul fichier (une heure ferait ~80 Mo en mémoire) : une piste en boucle de
+// quelques minutes tourne, et une courte « retombée » est lue à la fin.
+const LOOP_ABOVE_SECONDS = 15 * 60;
 
 export class Guide {
   /**
@@ -90,8 +93,12 @@ export class Guide {
     if (this.state !== 'idle') return false;
     if (!this.audio) return this.fail({ name: 'son indisponible' });
     this.state = 'starting';
-    const { preset, cycles, style, loop } = this.o;
+    const { preset, cycles, style } = this.o;
+    const unlimited = !Number.isFinite(cycles);
+    const loop = unlimited || cycles * (preset.inhale + preset.hold1 + preset.exhale + preset.hold2) > LOOP_ABOVE_SECONDS;
     const { pcm, rate } = await renderTrack({ preset, cycles, style, loop });
+    // Séance longue mais finie : la retombée (le geste de fin) est fabriquée tout de suite, lue le moment venu.
+    const outro = loop && !unlimited ? await renderTrack({ preset, cycles: 0, lead: 0, style }) : null;
     const refused = await this.unlocked;
     if (this.state !== 'starting') return false;
     if (refused) return this.fail(refused);
@@ -103,6 +110,7 @@ export class Guide {
       this.loopLen = pcm.length / rate;
       this.origin = this.loopLen - LEAD;
       a.loop = true;
+      if (outro) this.outroUrl = this.url(wavBlob(outro.pcm, outro.rate));
     }
     this.bind();
     try {
@@ -206,6 +214,13 @@ export class Guide {
     clearTimeout(this.finishTimer);
     this.finishTimer = setTimeout(() => this.destroy(), TAIL_GRACE_MS);
     this.clearMediaSession();
+    if (this.outroUrl) {
+      // La boucle laisse la place à la retombée, qui se termine d'elle-même.
+      const a = this.audio;
+      a.loop = false;
+      a.src = this.outroUrl;
+      a.play().catch(() => this.destroy());
+    }
   }
 
   destroy() {
@@ -229,12 +244,12 @@ export class Guide {
   setupMediaSession() {
     const ms = navigator.mediaSession;
     if (!ms) return;
-    const { preset, cycles, loop } = this.o;
+    const { preset, cycles } = this.o;
     try {
       ms.metadata = new MediaMetadata({
         title: `${preset.name} · ${patternLabel(preset)}`,
         artist: 'Respire',
-        album: loop ? 'Sans limite' : formatDuration(cycles * (preset.inhale + preset.hold1 + preset.exhale + preset.hold2)),
+        album: Number.isFinite(cycles) ? formatDuration(cycles * (preset.inhale + preset.hold1 + preset.exhale + preset.hold2)) : 'Sans limite',
         artwork: [
           { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },
@@ -269,9 +284,17 @@ export class Guide {
   position() {
     const a = this.audio;
     const ms = navigator.mediaSession;
-    if (!ms?.setPositionState || !a || this.loopLen || !Number.isFinite(a.duration) || this.state !== 'active') return; // pas de progression pour une boucle
+    if (!ms?.setPositionState || !a || this.state !== 'active') return;
+    if (this.loopLen && !Number.isFinite(this.o.cycles)) return; // session sans limite : pas de progression
     try {
-      ms.setPositionState({ duration: a.duration, position: Math.min(a.currentTime, a.duration), playbackRate: 1 });
+      if (this.loopLen) {
+        // Séance longue : la progression de la séance entière (et non celle d'un tour de la boucle).
+        const { preset, cycles } = this.o;
+        const duration = cycles * (preset.inhale + preset.hold1 + preset.exhale + preset.hold2) + LEAD;
+        ms.setPositionState({ duration, position: Math.max(0, Math.min(this.time, duration)), playbackRate: 1 });
+      } else if (Number.isFinite(a.duration)) {
+        ms.setPositionState({ duration: a.duration, position: Math.min(a.currentTime, a.duration), playbackRate: 1 });
+      }
     } catch {
       /* position hors limites */
     }
