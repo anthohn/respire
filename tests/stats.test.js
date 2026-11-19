@@ -162,3 +162,25 @@ test('son : aucune méthode ne plante tant que le son n’a jamais été activé
   });
   assert.equal(s.g, null);
 });
+
+test('4-7-8 : inspire 4, retiens 7, expire 8', () => {
+  const p = PRESETS.find((x) => x.id === '478');
+  assert.ok(p);
+  assert.equal(cycleLength(p), 19);
+  assert.deepEqual([phaseAt(p, 0).phase, phaseAt(p, 3.9).phase, phaseAt(p, 4).phase, phaseAt(p, 10.9).phase, phaseAt(p, 11).phase, phaseAt(p, 18.9).phase, phaseAt(p, 19).phase],
+    ['inhale', 'inhale', 'hold1', 'hold1', 'exhale', 'exhale', 'inhale']);
+  assert.equal(phaseAt(p, 6).breath, 1, 'poumons pleins pendant la pause');
+  assert.equal(phaseAt(p, 7).phaseDur, 7);
+  assert.equal(phaseAt(p, 11).phaseDur, 8);
+});
+
+test('une session compte toujours pour la série (au moins 60 s), quel que soit le rythme', () => {
+  for (const p of PRESETS) {
+    for (const minutes of [1, 3, 5, 10]) {
+      const { totalSeconds } = sessionPlan(p, minutes);
+      assert.ok(totalSeconds >= 60, `${p.name} ${minutes} min → ${totalSeconds} s`);
+      assert.ok(Math.abs(totalSeconds - minutes * 60) <= Math.max(cycleLength(p), 20), `${p.name} ${minutes} min trop éloigné : ${totalSeconds} s`);
+    }
+  }
+  assert.deepEqual(sessionPlan(PRESETS.find((x) => x.id === '478'), 1), { cycles: 4, totalSeconds: 76 });
+});

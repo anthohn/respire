@@ -26,6 +26,12 @@ export const PRESETS = [
     tagline: 'Avec une courte pause avant d’expirer',
     inhale: 4, hold1: 2, exhale: 6, hold2: 0,
   },
+  {
+    id: '478',
+    name: '4-7-8',
+    tagline: 'Inspire 4, retiens 7, expire 8. Un classique du soir, assis ou allongé, sans forcer.',
+    inhale: 4, hold1: 7, exhale: 8, hold2: 0,
+  },
 ];
 
 export const DURATIONS = [1, 3, 5, 10];
@@ -46,7 +52,9 @@ export function patternLabel(p) {
 /** Nombre de cycles entiers pour approcher la durée demandée (la session finit sur une expiration complète). */
 export function sessionPlan(preset, minutes) {
   const len = cycleLength(preset);
-  const cycles = Math.max(1, Math.round((minutes * 60) / len));
+  const target = minutes * 60;
+  // Une session doit toujours compter pour la série (au moins 60 s) : on arrondit vers le haut si besoin.
+  const cycles = Math.max(1, Math.round(target / len), Math.ceil(Math.min(target, 60) / len));
   return { cycles, totalSeconds: cycles * len };
 }
 
