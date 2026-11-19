@@ -22,6 +22,7 @@ L'objectif n'est pas de « faire de la relaxation » de temps en temps, mais d'i
 
 Dans Réglages → Synchronisation : « Activer » crée un **code de 16 chiffres** (à ranger dans un gestionnaire de mots de passe) ; sur un autre appareil, « J'ai un code » le retrouve.
 
+- **Presque automatique avec ton gestionnaire de mots de passe** (Apple Mots de passe, Proton Pass, 1Password, Bitwarden, Brave…) : les écrans sont de vrais formulaires (identifiant « Respire » + code). À l'activation, la demande d'enregistrement part toute seule ; sur l'autre appareil, le champ est déjà actif, et dès que les 16 chiffres sont remplis la connexion se fait sans autre geste.
 - **Aucun compte, aucun e-mail.** Du code on dérive, sur l'appareil, un identifiant et une clé de chiffrement (PBKDF2 à 600 000 tours, AES-GCM). Le serveur ne reçoit que du texte chiffré : il ne peut lire ni l'historique ni le prénom, et ne connaît pas le code.
 - **Rien ne se perd** : les sessions de tous les appareils s'additionnent. Pour le prénom, l'objectif, le rythme et la durée, la modification la plus récente gagne. Le thème, le son et les vibrations restent propres à chaque appareil.
 - **Un code mal saisi ne crée jamais de compte** (rejoindre ne fait que retrouver une fiche existante).

@@ -490,11 +490,16 @@ const actions = {
     }
     ui.sync.busy = false;
     refreshSettings();
+    // Le code vient d'être créé : on propose tout de suite de l'enregistrer dans le gestionnaire de mots de passe.
+    if (state.sync) requestAnimationFrame(() => document.querySelector('form[data-form="sync-save"]')?.requestSubmit());
   },
   'sync-enter'() {
     ui.sync.entering = true;
     ui.sync.error = '';
     refreshSettings();
+    // Champ actif tout de suite : le gestionnaire de mots de passe propose le code enregistré.
+    requestAnimationFrame(() => document.querySelector('[data-input="sync-code"]')?.focus());
+    useStoredCredential();
   },
   'sync-cancel'() {
     ui.sync.entering = false;
@@ -524,6 +529,13 @@ const actions = {
     }
     ui.sync.busy = false;
     refreshSettings();
+  },
+  'sync-peek'(el) {
+    const input = document.querySelector('[data-input="sync-code"]');
+    if (!input) return;
+    const hidden = input.type === 'password';
+    input.type = hidden ? 'text' : 'password';
+    el.textContent = hidden ? 'Masquer le code' : 'Afficher le code';
   },
   'sync-now': () => runSync({ manual: true }),
   'sync-reveal'() {
@@ -645,6 +657,48 @@ document.addEventListener('click', (e) => {
   actions[el.dataset.action]?.(el, e);
 });
 
+// Les formulaires sont de vrais formulaires (identifiant + code) : les gestionnaires de mots de passe
+// savent proposer d'enregistrer le code, puis le remplir sur l'autre appareil.
+document.addEventListener('submit', async (e) => {
+  const form = e.target.closest?.('form[data-form]');
+  if (!form) return;
+  e.preventDefault();
+  if (form.dataset.form === 'sync-join') actions['sync-join']();
+  else if (form.dataset.form === 'sync-save') await saveToPasswordManager();
+});
+
+/** Chrome, Brave, Edge : le sélecteur de mots de passe du navigateur propose le code enregistré, puis on se connecte. */
+async function useStoredCredential() {
+  if (!window.PasswordCredential || !navigator.credentials?.get) return;
+  try {
+    const cred = await navigator.credentials.get({ password: true, mediation: 'optional' });
+    const code = normalizeCode(cred?.password);
+    if (!code || !ui.sync.entering) return;
+    ui.sync.draft = formatCode(code);
+    const input = document.querySelector('[data-input="sync-code"]');
+    if (input) input.value = ui.sync.draft;
+    await actions['sync-join']();
+  } catch {
+    /* pas de mot de passe enregistré, ou refus : saisie ou remplissage du gestionnaire */
+  }
+}
+
+async function saveToPasswordManager() {
+  const code = state.sync?.code;
+  if (!code) return;
+  try {
+    // Navigateurs basés sur Chromium (Chrome, Brave, Edge) : demande d'enregistrement directe.
+    if (window.PasswordCredential && navigator.credentials?.store) {
+      await navigator.credentials.store(new PasswordCredential({ id: 'Respire', name: 'Respire', password: code }));
+      toast('Demande envoyée : valide-la dans ton gestionnaire de mots de passe');
+      return;
+    }
+  } catch {
+    /* on retombe sur le message ci-dessous */
+  }
+  toast('Ton gestionnaire de mots de passe devrait te proposer d’enregistrer le code. Sinon, copie-le.');
+}
+
 document.addEventListener('change', (e) => {
   const t = e.target;
   if (t.dataset.pref) {
@@ -677,6 +731,8 @@ document.addEventListener('input', (e) => {
   } else if (t.dataset.input === 'sync-code') {
     t.value = formatCode(t.value.replace(/\D/g, '').slice(0, 16));
     ui.sync.draft = t.value;
+    // Code complet (saisi ou rempli par le gestionnaire de mots de passe) : on se connecte sans rien demander de plus.
+    if (normalizeCode(t.value) && !ui.sync.busy) actions['sync-join']();
   } else if (t.dataset.input === 'ob-name') {
     ui.ob.name = t.value;
   }

@@ -332,12 +332,16 @@ function syncSection({ state, ui }) {
     <p class="list-title">Synchronisation</p>
     <p class="fine left">Retrouve ton historique sur tous tes appareils, sans compte ni e-mail. Un code de 16 chiffres suffit, et tes données sont chiffrées : le serveur ne peut pas les lire.</p>
     ${u.entering ? `
-    <input class="text-input wide code-input" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="19" placeholder="0000 0000 0000 0000" value="${esc(u.draft)}" data-input="sync-code" aria-label="Code de synchronisation" />
-    ${error}
-    <div class="btn-row">
-      <button class="btn ghost" data-action="sync-cancel">Annuler</button>
-      <button class="btn accent" data-action="sync-join" ${u.busy ? 'disabled' : ''}>${u.busy ? 'Connexion…' : 'Se connecter'}</button>
-    </div>` : `
+    <form class="pw-form" data-form="sync-join" autocomplete="on" novalidate>
+      <input class="text-input wide" type="text" name="username" value="Respire" autocomplete="username" autocapitalize="off" spellcheck="false" aria-label="Identifiant" />
+      <input class="text-input wide code-input" type="password" name="password" inputmode="numeric" autocomplete="current-password" spellcheck="false" maxlength="19" placeholder="Code à 16 chiffres" value="${esc(u.draft)}" data-input="sync-code" aria-label="Code de synchronisation" />
+      <button type="button" class="link-btn" data-action="sync-peek">Afficher le code</button>
+      ${error}
+      <div class="btn-row">
+        <button type="button" class="btn ghost" data-action="sync-cancel">Annuler</button>
+        <button type="submit" class="btn accent" ${u.busy ? 'disabled' : ''}>${u.busy ? 'Connexion…' : 'Se connecter'}</button>
+      </div>
+    </form>` : `
     ${error}
     <div class="btn-row">
       <button class="btn accent" data-action="sync-enable" ${u.busy ? 'disabled' : ''}>${u.busy ? 'Activation…' : 'Activer'}</button>
@@ -351,7 +355,12 @@ function syncSection({ state, ui }) {
     <p class="fine left"><b>Active</b> · dernière synchronisation ${ago(sy.lastSync)}${u.busy ? ' · en cours…' : ''}</p>
     ${u.revealed ? `
     <div class="code-box"><b class="code">${formatCode(sy.code)}</b><button class="btn" data-action="sync-copy">Copier</button></div>
-    <p class="fine left">Range ce code dans ton gestionnaire de mots de passe : c’est la seule façon de retrouver tes données sur un autre appareil. Ne le partage pas, et personne ne peut le récupérer à ta place.</p>` : ''}
+    <form class="pw-form" data-form="sync-save" autocomplete="on" novalidate>
+      <label class="pw-row"><span>Identifiant</span><input class="text-input" type="text" name="username" value="Respire" autocomplete="username" readonly /></label>
+      <label class="pw-row"><span>Code</span><input class="text-input" type="password" name="password" value="${esc(sy.code)}" autocomplete="new-password" readonly /></label>
+      <button type="submit" class="btn accent wide">Enregistrer dans mon gestionnaire de mots de passe</button>
+    </form>
+    <p class="fine left">Sans ce code, impossible de retrouver tes données sur un autre appareil, et personne ne peut le récupérer à ta place. Ne le partage pas.</p>` : ''}
     ${error}
     <div class="btn-row">
       <button class="btn" data-action="sync-now" ${u.busy ? 'disabled' : ''}>Synchroniser</button>
