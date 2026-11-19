@@ -6,6 +6,7 @@
 // - La fusion ne perd jamais rien : les sessions de tous les appareils s'additionnent.
 
 import { getPreset } from './breath.js';
+import { sanitizeCircle } from './store.js';
 
 const API = 'api/sync';
 const SALT = 'respire-sync-v1';
@@ -67,19 +68,21 @@ function toBase64(bytes) {
 }
 const fromBase64 = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 
-export async function deriveKeys(code) {
-  if (keyCache.has(code)) return keyCache.get(code);
+/** `salt` distinct pour un autre usage (les cercles) : le même code ne donne alors jamais les mêmes clés. */
+export async function deriveKeys(code, salt = SALT) {
+  const cacheKey = `${salt}:${code}`;
+  if (keyCache.has(cacheKey)) return keyCache.get(cacheKey);
   if (!globalThis.crypto?.subtle) throw new SyncError('insecure');
   const enc = new TextEncoder();
   const base = await crypto.subtle.importKey('raw', enc.encode(`respire:${code}`), 'PBKDF2', false, ['deriveBits']);
   const bits = new Uint8Array(
-    await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(SALT), iterations: ITERATIONS }, base, 512),
+    await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(salt), iterations: ITERATIONS }, base, 512),
   );
   const keys = {
     id: hex(bits.subarray(0, 32)), // sert d'adresse sur le serveur
     key: await crypto.subtle.importKey('raw', bits.slice(32), 'AES-GCM', false, ['encrypt', 'decrypt']), // ne quitte jamais l'appareil
   };
-  keyCache.set(code, keys);
+  keyCache.set(cacheKey, keys);
   return keys;
 }
 
@@ -110,6 +113,8 @@ export function buildPayload(state) {
       goalMin: state.settings.goalMin,
       presetId: state.settings.presetId,
       minutes: state.settings.minutes,
+      // L'identité dans le cercle suit la synchronisation (chiffrée comme le reste) : même personne sur tous mes appareils.
+      circle: state.circle ? { code: state.circle.code, mid: state.circle.mid, key: state.circle.key, cn: state.circle.cn || '' } : null,
     },
     prefsAt: state.prefsAt || 0,
     onboarded: !!state.onboarded,
@@ -147,6 +152,12 @@ export function applyPayload(state, p) {
   state.settings.goalMin = p.prefs.goalMin ?? state.settings.goalMin;
   state.settings.presetId = getPreset(p.prefs.presetId ?? state.settings.presetId).id;
   state.settings.minutes = p.prefs.minutes ?? state.settings.minutes;
+  if ('circle' in p.prefs) {
+    const incoming = sanitizeCircle(p.prefs.circle);
+    const same = incoming && state.circle && incoming.code === state.circle.code && incoming.mid === state.circle.mid;
+    // Même cercle : on garde ce qui est propre à cet appareil (signes envoyés, cache). Sinon, on adopte (ou on quitte).
+    state.circle = same ? { ...state.circle, cn: incoming.cn } : incoming;
+  }
   state.prefsAt = p.prefsAt;
   state.onboarded = state.onboarded || p.onboarded;
   state.sessions = p.sessions;

@@ -8,6 +8,7 @@ L'objectif n'est pas de « faire de la relaxation » de temps en temps, mais d'i
 
 - **Sessions guidées** : une aura qui se gonfle et se dégonfle au rythme choisi, avec consignes discrètes (« par le nez, tout en douceur »), compte à rebours de chaque phase et vibrations en option. **Le son et l'écran ne font qu'un** : la séance entière est fabriquée en une piste audio (en une fraction de seconde) et lue comme un podcast. La bulle s'y cale ; si tu verrouilles ton téléphone, le son continue (écouteurs, Bluetooth, voiture), l'écran de verrouillage et la voiture peuvent la mettre en pause, et au déverrouillage tout est déjà au bon endroit. Trois guidages au choix dans Réglages : « Vague » (une houle douce qui enfle à l'inspiration), « Nappe » (des voyelles qui s'ouvrent et se referment), « Repères » (deux notes). Le bouton son de la séance coupe ou rétablit le son sans l'interrompre. Si la lecture est refusée, la séance continue à l'horloge, sans le son. La lecture écran verrouillé dans une application installée sur l'écran d'accueil d'un iPhone est à vérifier sur l'appareil.
 - **4 rythmes** : Expiration longue (4 · 6, recommandé), Cohérence (5 · 5), Calme profond (4 · 2 · 6), 4-7-8 (inspire 4, retiens 7, expire 8). Durées de 1, 3, 5 ou 10 minutes ; la session se termine toujours sur une expiration complète. **Libre** : une session sans limite, que l'on laisse tourner (par exemple dans la fenêtre flottante pendant qu'on travaille) et qu'on arrête quand on veut ; le temps compte vers le haut, le son tourne en boucle sans coupure, et la session s'enregistre dès qu'elle dépasse une minute. Le choix se fait un rythme à la fois : une bulle respire en direct au rythme (et à la couleur) choisi ; on balaie, on touche les points ou on utilise les flèches du clavier.
+- **Cercle de proches** (onglet « Cercle ») : on voit, à plusieurs, qui a respiré aujourd'hui, comme dans les cercles d'amis des applis de série. Un cercle se crée en un geste et se rejoint avec un **lien** ou un code de 16 chiffres (jusqu'à 12 personnes). Chacun apparaît avec son prénom, sa série, la semaine en sept points et un état (« A respiré aujourd'hui », « Pas encore », « Sa série ne tient qu'à un fil »). On peut s'envoyer un **petit signe** 👋 ou un **bravo** 👏 (un de chaque par personne et par jour), qui s'affiche sur l'accueil du destinataire. L'accueil montre qui a respiré. **Anonyme et chiffré de bout en bout** comme la synchronisation : pas de compte ni d'e-mail, rien n'est partagé tant qu'on ne rejoint pas un cercle, et on n'y met que le prénom, la série et les jours de la semaine, **jamais** durées, ressentis ni historique. Le serveur ne voit que du texte chiffré avec la clé du cercle (dérivée du code, avec un sel distinct de la synchronisation) et des identifiants aléatoires ; chaque membre a sa propre clé d'écriture, personne ne peut modifier la fiche d'un autre. Quitter le cercle supprime sa fiche. L'identité dans le cercle suit la synchronisation entre appareils.
 - **Série (streak) indulgente** : une minute par jour suffit. Un jour manqué par semaine est offert (« jour de repos »), deux jours d'affilée cassent la série.
 - **Ascension** : un chemin qui monte de 0 à 100 jours, avec des paliers (3, 7, 14, 30, 60, 100) et un marqueur « Tu es ici ».
 - **Objectif quotidien**, niveaux (Graine → Océan), trophées, calendrier du mois, graphique de la semaine, historique avec ressenti après chaque session.
@@ -31,11 +32,11 @@ Dans Réglages → Synchronisation : « Activer » crée un **code de 16 chiffre
 
 ### Mise en place sur Vercel (une fois)
 
-L'API (`api/sync.js`) stocke les données chiffrées dans une base Redis.
+Les API (`api/sync.js` pour la synchronisation, `api/circle.js` pour les cercles de proches) stockent des données chiffrées dans la même base Redis : rien de plus à configurer pour les cercles. Un cercle sans écriture pendant 90 jours est supprimé.
 
 1. Dans le projet Vercel : **Storage → Create / Marketplace → Upstash (Redis)**, gratuit, puis le **connecter au projet**.
 2. Vercel ajoute les variables d'environnement tout seul (`KV_REST_API_URL` et `KV_REST_API_TOKEN`, ou `UPSTASH_REDIS_REST_URL` et `UPSTASH_REDIS_REST_TOKEN`, les deux sont reconnues).
-3. **Redéployer** le projet, puis tester dans Réglages → Synchronisation → Activer.
+3. **Redéployer** le projet, puis tester dans Réglages → Synchronisation → Activer (et, pour les cercles, dans l'onglet Cercle → Créer mon cercle).
 
 Sans base configurée, l'API répond « synchronisation non activée sur ce serveur » ; en local (`npm start`), elle utilise la mémoire du processus (perdue à l'arrêt).
 
@@ -86,6 +87,8 @@ js/audio.js           notes de base des « Repères », vibrations
 js/store.js           stockage local
 js/sync.js            synchronisation (code, chiffrement, fusion)
 api/sync.js           API de synchronisation (Vercel), api/_store.js : stockage
+api/circle.js         API des cercles de proches (même base que la synchronisation)
+js/circle.js          cercle : clés, statut partagé, affichage, appels
 js/content.js         textes
 sw.js, manifest.webmanifest, icons/   PWA
 tests/                tests unitaires

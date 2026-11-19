@@ -23,7 +23,7 @@ export function memoryStore() {
       return v ? JSON.parse(v) : null;
     },
     /** Écrit seulement si la révision actuelle est celle que le client a vue (évite d'écraser un autre appareil). */
-    async cas(key, expectedRev, record) {
+    async cas(key, expectedRev, record, _ttl) {
       const cur = map.get(key);
       const curRev = cur ? JSON.parse(cur).rev : 0;
       if (curRev !== expectedRev) return { ok: false, current: cur ? JSON.parse(cur) : null };
@@ -62,8 +62,8 @@ function upstashStore(url, token) {
       const v = await run(['GET', key]);
       return v ? JSON.parse(v) : null;
     },
-    async cas(key, expectedRev, record) {
-      const [ok, current] = await run(['EVAL', CAS_SCRIPT, '1', key, String(expectedRev), JSON.stringify(record), String(TTL_SECONDS)]);
+    async cas(key, expectedRev, record, ttl = TTL_SECONDS) {
+      const [ok, current] = await run(['EVAL', CAS_SCRIPT, '1', key, String(expectedRev), JSON.stringify(record), String(ttl)]);
       return ok === 1 ? { ok: true } : { ok: false, current: current ? JSON.parse(current) : null };
     },
     async del(key) {

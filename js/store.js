@@ -12,6 +12,8 @@ const defaults = () => ({
   seenBadges: [],
   prefsAt: 0, // dernière modification des préférences synchronisées
   sync: null, // { code, rev, lastSync } quand la synchronisation est activée
+  circle: null, // { code, mid, key, cn, ... } quand on est dans un cercle de proches (voir circle.js)
+  circleHint: false, // l'invitation à créer un cercle, sur l'accueil, a été fermée
   settings: {
     goalMin: 5,
     presetId: 'long',
@@ -24,6 +26,22 @@ const defaults = () => ({
     reminder: '08:00',
   },
 });
+
+/** Un cercle n'est gardé que s'il est complet et bien formé (sinon, on repart sans cercle plutôt que de planter). */
+export function sanitizeCircle(c) {
+  if (!c || typeof c !== 'object') return null;
+  if (!/^\d{16}$/.test(c.code) || !/^[0-9a-f]{16}$/.test(c.mid) || !/^[0-9a-f]{64}$/.test(c.key)) return null;
+  return {
+    code: c.code,
+    mid: c.mid,
+    key: c.key,
+    cn: typeof c.cn === 'string' ? c.cn.slice(0, 24) : '',
+    joinedAt: Number.isFinite(c.joinedAt) ? c.joinedAt : Date.now(),
+    sent: c.sent && typeof c.sent === 'object' ? c.sent : {},
+    cache: c.cache && typeof c.cache === 'object' ? c.cache : null,
+    published: c.published && typeof c.published === 'object' ? c.published : null,
+  };
+}
 
 export function load() {
   const base = defaults();
@@ -44,6 +62,7 @@ export function load() {
     return {
       ...base,
       ...data,
+      circle: sanitizeCircle(data.circle),
       settings,
       sessions: Array.isArray(data.sessions) ? data.sessions : [],
       seenBadges: Array.isArray(data.seenBadges) ? data.seenBadges : [],

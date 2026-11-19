@@ -4,6 +4,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import syncHandler from '../api/sync.js';
+import circleHandler from '../api/circle.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const port = Number(process.env.PORT) || 8080;
@@ -21,7 +22,9 @@ const types = {
 
 createServer(async (req, res) => {
   // L'API de synchronisation tourne aussi en local (stockage en mémoire, perdu à l'arrêt).
-  if (new URL(req.url, 'http://x').pathname === '/api/sync') return syncHandler(req, res);
+  const route = new URL(req.url, 'http://x').pathname;
+  if (route === '/api/sync') return syncHandler(req, res);
+  if (route === '/api/circle') return circleHandler(req, res);
   try {
     let path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname));
     if (path.endsWith('/')) path += 'index.html';

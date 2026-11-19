@@ -4,12 +4,16 @@ import { load, save, reset } from './store.js';
 import { dayKey, buildStats, levelInfo, earnedBadgeIds, minutesOn, BADGES } from './stats.js';
 import { PRESETS, getPreset, phaseAt } from './breath.js';
 import { tipOfTheDay, finishMessage } from './content.js';
-import { homeView, progressView, settingsView, sheetView, doneView, onboardingView } from './views.js';
+import { homeView, progressView, circleView, circleCardView, circlePreviewView, settingsView, sheetView, doneView, onboardingView } from './views.js';
 import { Session } from './session.js';
 import { renderTrack, wavBlob, TRACK_RATE } from './track.js';
 import { icon } from './icons.js';
 import { pipSupported } from './pip.js';
 import { Aura, readPalette } from './aura.js';
+import {
+  createCircle, joinCircle, publish as publishCircle, fetchCircle, sendSign, ackEvents, leaveCircle, parseInvite, inviteLink,
+  parseStatus, peekCircle, CircleError, CIRCLE_MESSAGES, formatCode as formatCircleCode, normalizeCode as normalizeCircleCode,
+} from './circle.js';
 import { syncNow, enableSync, joinWithCode, deleteRemote, normalizeCode, formatCode, SyncError, SYNC_MESSAGES } from './sync.js';
 
 let state = load();
@@ -23,6 +27,8 @@ const ui = {
   canInstall: false,
   iosHint: /iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone,
   ob: { step: 0, name: '', goal: 5 },
+  // Le cercle de proches : formulaire ouvert, dernier état connu du serveur.
+  circle: { form: null, busy: false, loading: false, error: '', members: [], events: [], at: 0, name: '', cname: '', code: '', invited: false, showCode: false, copied: false, preview: null },
 };
 let session = null;
 let installEvent = null;
@@ -53,7 +59,7 @@ function context() {
   };
 }
 
-const views = { home: homeView, progress: progressView, settings: settingsView };
+const views = { home: homeView, progress: progressView, circle: circleView, settings: settingsView };
 
 function render({ animate = true, keepScroll = false } = {}) {
   const scroll = window.scrollY;
@@ -346,6 +352,118 @@ function closeSheet({ instant = false } = {}) {
   render({ animate: false, keepScroll: true });
 }
 
+// ---------- Cercle de proches ----------
+
+let circleTimer = 0;
+
+/** Le dernier état connu s'affiche tout de suite (même sans réseau) ; il est relu et nettoyé comme tout ce qui vient des autres. */
+function restoreCircleCache() {
+  const cache = state.circle?.cache;
+  if (!cache || !Array.isArray(cache.members)) return;
+  const members = cache.members
+    .map((m) => ({ mid: m.mid, at: m.at, me: m.mid === state.circle.mid, status: parseStatus(m.status) }))
+    .filter((m) => m.status && typeof m.mid === 'string');
+  ui.circle.members = members;
+  ui.circle.at = Number.isFinite(cache.at) ? cache.at : 0;
+}
+
+/** Affiche l'état du cercle sans tout redessiner : sur l'accueil, seule la carte change (la bulle ne doit pas être recréée). */
+function rerenderCircle() {
+  if (session) return;
+  if (ui.tab === 'circle') {
+    if (document.activeElement?.closest?.('.circle-form')) return; // on est en train de saisir : on ne touche à rien
+    render({ animate: false, keepScroll: true });
+  } else if (ui.tab === 'home') {
+    const slot = view.querySelector('[data-slot="circle-card"]');
+    if (slot) slot.innerHTML = circleCardView(context());
+  }
+}
+
+const circleMessage = (e) => (e instanceof CircleError ? CIRCLE_MESSAGES[e.code] || CIRCLE_MESSAGES.server : CIRCLE_MESSAGES.server);
+
+/** Publie mon statut, puis lit celui des autres. `silent` : sans effacer ce qui est affiché pendant le chargement. */
+async function refreshCircle({ silent = false, force = false } = {}) {
+  const cs = ui.circle;
+  if (!state.circle || cs.loading) return;
+  cs.loading = true;
+  if (!silent) {
+    cs.error = '';
+    rerenderCircle();
+  }
+  try {
+    await publishCircle(state, dayKey(), { force });
+    let got = await fetchCircle(state);
+    if (!got.members.some((m) => m.me)) {
+      // Ma fiche a disparu (cercle resté inactif trop longtemps) : je me réinscris.
+      await publishCircle(state, dayKey(), { force: true });
+      got = await fetchCircle(state);
+    }
+    cs.members = got.members;
+    cs.events = got.events;
+    cs.at = Date.now();
+    cs.error = '';
+    state.circle.cache = { at: cs.at, members: got.members };
+    save(state);
+  } catch (e) {
+    cs.error = circleMessage(e);
+  } finally {
+    cs.loading = false;
+    rerenderCircle();
+  }
+}
+
+/** Le cercle derrière un code : son nom et qui s'y trouve. Valide aussi le code dès qu'il est complet. */
+let previewToken = 0;
+async function loadPreview() {
+  const cs = ui.circle;
+  const token = ++previewToken;
+  cs.preview = null;
+  if (!normalizeCircleCode(cs.code)) {
+    rerenderPreview();
+    return;
+  }
+  cs.preview = { loading: true };
+  rerenderPreview();
+  try {
+    const info = await peekCircle(cs.code);
+    if (token === previewToken) cs.preview = info;
+  } catch (e) {
+    if (token === previewToken) cs.preview = { error: circleMessage(e) };
+  }
+  if (token === previewToken) rerenderPreview();
+}
+
+function rerenderPreview() {
+  const slot = view.querySelector('[data-slot="circle-preview"]');
+  if (slot) slot.innerHTML = circlePreviewView(ui.circle);
+}
+
+/** Un lien d'invitation (…#cercle=code) ouvre directement l'écran « rejoindre ». */
+function checkInvite() {
+  if (!/cercle=/i.test(location.hash)) return;
+  const code = parseInvite(location.hash);
+  history.replaceState(null, '', location.pathname + location.search); // le code ne reste pas dans la barre d'adresse
+  if (!code) {
+    toast('Ce lien d’invitation est incomplet.');
+    return;
+  }
+  ui.tab = 'circle';
+  if (state.circle?.code === code) return;
+  if (state.circle) {
+    toast('Tu es déjà dans un cercle. Quitte-le d’abord pour en rejoindre un autre.');
+    return;
+  }
+  Object.assign(ui.circle, { form: 'join', code: formatCircleCode(code), invited: true, name: state.name, error: '', preview: null });
+  loadPreview();
+}
+
+/** Une action du cercle qui change l'appartenance : on l'enregistre, et elle suit la synchronisation. */
+function circleChanged() {
+  touchPrefs();
+  save(state);
+  scheduleSync();
+}
+
 // ---------- Session ----------
 
 function startSession() {
@@ -419,6 +537,7 @@ function handleFinish({ seconds, cycles, completed }) {
     message: finishMessage({ streak: after.current, streakIncreased, goalReached, firstEver: before.sessions === 0 }),
   };
   session.showDone(doneView(data), () => celebrate(data));
+  if (state.circle) setTimeout(() => refreshCircle({ silent: true, force: true }), 1200); // tes proches voient ta série
 }
 
 function celebrate(d) {
@@ -571,6 +690,7 @@ const actions = {
   tab(el) {
     ui.tab = el.dataset.tab;
     render();
+    if (ui.tab === 'circle' && state.circle && Date.now() - ui.circle.at > 30000) refreshCircle({ silent: ui.circle.members.length > 0 });
   },
   start: () => startSession(),
   'open-sheet': () => openSheet(),
@@ -721,20 +841,24 @@ const actions = {
     toast('Rappel prêt : ouvre le fichier pour l’ajouter à ton calendrier');
   },
   export() {
-    const { sync, ...exportable } = state; // le code de synchronisation n'est jamais exporté
+    const { sync, circle, ...exportable } = state; // ni le code de synchronisation ni les clés du cercle ne sont exportés
     download('respire-donnees.json', 'application/json', JSON.stringify(exportable, null, 2));
     toast('Données exportées');
   },
   async reset() {
     const ok = await askConfirm({
       title: 'Tout effacer ?',
-      text: state.sync
+      text: (state.sync
         ? 'Ton historique, ta série et tes trophées seront supprimés de cet appareil, et la synchronisation sera désactivée ici. Les données restent sur le serveur : tu pourras les retrouver avec ton code.'
-        : 'Ton historique, ta série et tes trophées seront supprimés de cet appareil. Cette action est définitive.',
+        : 'Ton historique, ta série et tes trophées seront supprimés de cet appareil. Cette action est définitive.') +
+        (state.circle && !state.sync ? ' Tu quitteras aussi ton cercle.' : ''),
       ok: 'Effacer',
     });
     if (!ok) return;
+    // Sans synchronisation, ma fiche disparaît du cercle (au mieux). Avec elle, mes autres appareils restent dans le cercle.
+    if (state.circle && !state.sync) await leaveCircle(state, { force: true }).catch(() => {});
     state = reset();
+    Object.assign(ui.circle, { form: null, members: [], events: [], at: 0, error: '', showCode: false, invited: false, name: '', cname: '', code: '' });
     applyTheme();
     ui.tab = 'home';
     ui.ob = { step: 0, name: '', goal: 5 };
@@ -777,6 +901,144 @@ const actions = {
   'done-close'() {
     session?.destroy();
   },
+
+  // ----- Cercle de proches -----
+  'circle-form'(el) {
+    Object.assign(ui.circle, { form: el.dataset.form, error: '', name: ui.circle.name || state.name, invited: false });
+    if (el.dataset.form === 'join') Object.assign(ui.circle, { code: '', preview: null });
+    render({ animate: false, keepScroll: true });
+  },
+  'circle-cancel'() {
+    Object.assign(ui.circle, { form: null, error: '', invited: false });
+    render({ animate: false, keepScroll: true });
+  },
+  async 'circle-create'() {
+    const cs = ui.circle;
+    if (cs.busy) return;
+    cs.busy = true;
+    cs.error = '';
+    render({ animate: false, keepScroll: true });
+    try {
+      await createCircle(state, { name: cs.name, circleName: cs.cname }, dayKey());
+      Object.assign(cs, { form: null, members: [], events: [], at: 0, showCode: false });
+      circleChanged();
+      cs.busy = false;
+      await refreshCircle({ force: true });
+    } catch (e) {
+      cs.error = circleMessage(e);
+    } finally {
+      cs.busy = false;
+      render({ animate: false, keepScroll: true });
+    }
+  },
+  async 'circle-join'() {
+    const cs = ui.circle;
+    if (cs.busy) return;
+    cs.busy = true;
+    cs.error = '';
+    render({ animate: false, keepScroll: true });
+    try {
+      await joinCircle(state, cs.code, { name: cs.name }, dayKey());
+      Object.assign(cs, { form: null, members: [], events: [], at: 0, invited: false, showCode: false });
+      circleChanged();
+      cs.busy = false;
+      await refreshCircle({ force: true });
+    } catch (e) {
+      cs.error = circleMessage(e);
+    } finally {
+      cs.busy = false;
+      render({ animate: false, keepScroll: true });
+    }
+  },
+  'circle-refresh': () => refreshCircle({ force: true }),
+  'circle-hint'() {
+    state.circleHint = true;
+    save(state);
+    rerenderCircle();
+  },
+  async 'circle-share'() {
+    if (!state.circle) return;
+    const url = inviteLink(state.circle.code);
+    const name = state.name || 'Un proche';
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Respire', text: `${name} t’invite à respirer ensemble sur Respire. Voyez qui a respiré aujourd’hui !`, url });
+        return;
+      }
+      throw new Error('partage indisponible');
+    } catch (e) {
+      if (e?.name === 'AbortError') return; // fenêtre de partage fermée : rien à faire
+      actions['circle-copy']();
+    }
+  },
+  async 'circle-copy'() {
+    if (!state.circle) return;
+    try {
+      await navigator.clipboard.writeText(inviteLink(state.circle.code));
+      ui.circle.copied = true;
+    } catch {
+      ui.circle.showCode = true; // la copie est refusée : on montre le code, à recopier à la main
+    }
+    render({ animate: false, keepScroll: true });
+    setTimeout(() => {
+      ui.circle.copied = false;
+      if (ui.tab === 'circle') render({ animate: false, keepScroll: true });
+    }, 2500);
+  },
+  'circle-show-code'() {
+    ui.circle.showCode = !ui.circle.showCode;
+    render({ animate: false, keepScroll: true });
+  },
+  async 'circle-sign'(el) {
+    if (!state.circle) return;
+    const { mid, kind } = el.dataset;
+    try {
+      await sendSign(state, mid, kind, dayKey());
+      save(state);
+    } catch (e) {
+      if (e instanceof CircleError && e.code === 'too_soon') {
+        // Un signe est déjà parti récemment : on le marque comme envoyé pour aujourd'hui.
+        state.circle.sent = { ...(state.circle.sent || {}), [`${mid}:${kind}`]: dayKey() };
+        save(state);
+      } else {
+        ui.circle.error = circleMessage(e);
+      }
+    }
+    rerenderCircle();
+  },
+  async 'circle-dismiss'() {
+    const upTo = Math.max(0, ...ui.circle.events.map((e) => e.at));
+    ui.circle.events = [];
+    rerenderCircle();
+    try {
+      await ackEvents(state, upTo);
+    } catch {
+      /* ils réapparaîtront au prochain passage : pas grave */
+    }
+  },
+  async 'circle-leave'() {
+    if (!state.circle) return;
+    const ok = await askConfirm({
+      title: 'Quitter le cercle ?',
+      text: 'Ta fiche disparaît du cercle : tes proches ne voient plus ta série. Tu pourras le rejoindre de nouveau avec le code.',
+      ok: 'Quitter',
+    });
+    if (!ok) return;
+    try {
+      await leaveCircle(state);
+    } catch (e) {
+      const force = await askConfirm({
+        title: 'Pas de connexion',
+        text: 'Impossible de prévenir le cercle. Tu peux quitter quand même : ta fiche restera visible de tes proches pendant quelques semaines.',
+        ok: 'Quitter quand même',
+      });
+      if (!force) return;
+      await leaveCircle(state, { force: true });
+    }
+    Object.assign(ui.circle, { members: [], events: [], at: 0, form: null, showCode: false, error: '' });
+    circleChanged();
+    render({ animate: false, keepScroll: true });
+  },
 };
 
 // Le contour de focus n'est utile qu'au clavier : un toucher ou un clic ne doit pas en laisser un (voir le CSS).
@@ -795,7 +1057,9 @@ document.addEventListener('submit', async (e) => {
   const form = e.target.closest?.('form[data-form]');
   if (!form) return;
   e.preventDefault();
-  if (form.dataset.form === 'sync-join') actions['sync-join']();
+  if (form.dataset.form === 'circle-create') actions['circle-create']();
+  else if (form.dataset.form === 'circle-join') actions['circle-join']();
+  else if (form.dataset.form === 'sync-join') actions['sync-join']();
   else if (form.dataset.form === 'sync-save') await saveToPasswordManager();
 });
 
@@ -853,11 +1117,24 @@ document.addEventListener('input', (e) => {
     touchPrefs();
     save(state);
     scheduleSync();
+    if (state.circle) {
+      clearTimeout(circleTimer);
+      circleTimer = setTimeout(() => refreshCircle({ silent: true, force: true }), 1500);
+    }
   } else if (t.dataset.input === 'sync-code') {
     t.value = formatCode(t.value.replace(/\D/g, '').slice(0, 16));
     ui.sync.draft = t.value;
     // Code complet (saisi ou rempli par le gestionnaire de mots de passe) : on se connecte sans rien demander de plus.
     if (normalizeCode(t.value) && !ui.sync.busy) actions['sync-join']();
+  } else if (t.dataset.input === 'circle-name') {
+    ui.circle.name = t.value;
+  } else if (t.dataset.input === 'circle-cname') {
+    ui.circle.cname = t.value;
+  } else if (t.dataset.input === 'circle-code') {
+    t.value = formatCircleCode(t.value.replace(/\D/g, '').slice(0, 16));
+    ui.circle.code = t.value;
+    ui.circle.error = '';
+    loadPreview();
   } else if (t.dataset.input === 'ob-name') {
     ui.ob.name = t.value;
   }
@@ -908,6 +1185,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
   if (!session) render({ animate: false, keepScroll: true });
   if (state.sync && Date.now() - state.sync.lastSync > 60000) scheduleSync(300);
+  if (state.circle && Date.now() - ui.circle.at > 60000) refreshCircle({ silent: true });
 });
 
 window.addEventListener('online', () => scheduleSync(500));
@@ -918,8 +1196,15 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyThe
 
 applyTheme();
 applyMoment();
+restoreCircleCache();
+checkInvite();
 render();
 scheduleSync(600);
+if (state.circle) setTimeout(() => refreshCircle({ silent: true }), 900);
+window.addEventListener('hashchange', () => {
+  checkInvite();
+  render();
+});
 if (!state.onboarded) {
   ui.ob = { step: 0, name: state.name, goal: state.settings.goalMin };
   showOnboarding();

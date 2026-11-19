@@ -9,6 +9,7 @@ import { DAY_LETTERS, MONTHS, FEELINGS, greeting, moment } from './content.js';
 import { journeyLayout, STEPS } from './journey.js';
 import { GUIDE_STYLES } from './track.js';
 import { formatCode } from './sync.js';
+import { memberView, sortMembers, summarize, canSend, SIGNS, MAX_MEMBERS } from './circle.js';
 
 export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
@@ -132,6 +133,8 @@ export function homeView(c) {
     <p>${nd.text}</p>
   </section>` : ''}
 
+  <div data-slot="circle-card">${circleCardView(c)}</div>
+
   <section class="tiles rise">
     <article class="card tile tile-streak ${st.current > 0 ? 'is-lit' : ''}">
       <div class="tile-head"><span class="flame ${st.todayDone ? 'burning' : ''}">${icon.flame(30)}</span><span class="kicker">Série</span></div>
@@ -164,6 +167,197 @@ export function homeView(c) {
     <h3>${esc(tip.title)}</h3>
     <p>${esc(tip.text)}</p>
   </section>`;
+}
+
+// ---------- Cercle de proches ----------
+
+const hueOf = (mid) => parseInt(String(mid).slice(0, 4), 16) % 360;
+const initialOf = (name) => esc((Array.from(name || '?')[0] || '?').toUpperCase());
+
+const avatar = (mid, name, done = false) =>
+  `<span class="avatar ${done ? 'done' : ''}" style="--h:${hueOf(mid)}" aria-hidden="true">${initialOf(name)}${done ? `<i class="av-check">${icon.check(11)}</i>` : ''}</span>`;
+
+const joinNames = (names) => (names.length <= 1 ? names[0] || '' : `${names.slice(0, -1).join(', ')} et ${names.at(-1)}`);
+
+/** Les signes reçus (« Léa t'a fait un petit signe ») : un bandeau discret qu'on ferme d'un toucher. */
+function eventBanners(events) {
+  if (!events.length) return '';
+  return `<div class="sign-list" role="status">${events
+    .slice(-3)
+    .map((e) => `<p class="sign"><span class="sign-emoji" aria-hidden="true">${SIGNS[e.kind].emoji}</span>${esc(SIGNS[e.kind].text(e.name))}</p>`)
+    .join('')}<button class="icon-btn small" data-action="circle-dismiss" aria-label="Fermer">${icon.close(16)}</button></div>`;
+}
+
+/** La carte de l'accueil : qui, parmi les proches, a respiré aujourd'hui. */
+export function circleCardView(c) {
+  const { state, ui, today } = c;
+  const cs = ui.circle;
+  const banners = state.circle ? eventBanners(cs.events) : '';
+  if (!state.circle) {
+    // Une invitation discrète, seulement une fois qu'on a pris goût à l'app, et qu'on peut fermer.
+    if (state.circleHint || state.sessions.length < 1) return '';
+    return `<section class="card circle-card teaser rise">
+      <button class="cc-main" data-action="tab" data-tab="circle">
+        <span class="avatars" aria-hidden="true">${[260, 330, 190].map((h, i) => `<span class="avatar ${i < 2 ? 'done' : ''}" style="--h:${h}">${i < 2 ? `<i class="av-check">${icon.check(11)}</i>` : ''}</span>`).join('')}</span>
+        <span class="cc-text"><b>Respire avec tes proches</b><small>Voyez qui a respiré aujourd’hui, et encouragez-vous.</small></span>
+      </button>
+      <button class="icon-btn small" data-action="circle-hint" aria-label="Fermer cette suggestion">${icon.close(16)}</button>
+    </section>`;
+  }
+  const members = sortMembers(cs.members, today);
+  const sum = summarize(members, today);
+  const others = members.filter((m) => !m.me);
+  const doneOthers = others.filter((m) => memberView(m.status, today).state === 'done').map((m) => m.status.name || 'Quelqu’un');
+  const title = !others.length
+    ? 'Invite tes proches'
+    : doneOthers.length
+      ? `${joinNames(doneOthers.slice(0, 3))}${doneOthers.length > 3 ? ` et ${doneOthers.length - 3} autre${doneOthers.length - 3 > 1 ? 's' : ''}` : ''} ${doneOthers.length > 1 ? 'ont' : 'a'} respiré aujourd’hui`
+      : 'Personne d’autre n’a encore respiré aujourd’hui';
+  const sub = !others.length ? 'Ton cercle est encore vide' : `${sum.done} sur ${sum.total} aujourd’hui${cs.error ? ' · hors ligne' : ''}`;
+  const faces = members.slice(0, 5).map((m) => avatar(m.mid, m.status.name, memberView(m.status, today).state === 'done')).join('');
+  return `${banners}<section class="card circle-card rise">
+    <button class="cc-main" data-action="tab" data-tab="circle">
+      <span class="avatars" aria-hidden="true">${faces || avatar(state.circle.mid, state.name)}</span>
+      <span class="cc-text"><b>${esc(title)}</b><small>${esc(sub)}</small></span>
+      <span class="cc-chev" aria-hidden="true">${icon.chevronRight(18)}</span>
+    </button>
+  </section>`;
+}
+
+const STATE_TEXT = {
+  done: ['A respiré aujourd’hui', 'Tu as respiré aujourd’hui'],
+  pending: ['Pas encore aujourd’hui', 'Pas encore aujourd’hui'],
+  risk: ['Sa série ne tient qu’à un fil', 'Ta série ne tient qu’à un fil'],
+  lapsed: ['Série interrompue', 'Série interrompue'],
+  new: ['Pas encore commencé', 'Pas encore commencé'],
+};
+
+/** Ce que l'on trouve derrière le code : le cercle et ses membres (ou la raison pour laquelle le code ne marche pas). */
+export function circlePreviewView(cs) {
+  const p = cs.preview;
+  if (!p) return '';
+  if (p.loading) return '<p class="circle-preview muted">Recherche du cercle…</p>';
+  if (p.error) return `<p class="fine err" role="alert">${esc(p.error)}</p>`;
+  const names = p.names.length ? joinNames(p.names.slice(0, 4)) + (p.names.length > 4 ? ` et ${p.names.length - 4} autre${p.names.length - 4 > 1 ? 's' : ''}` : '') : '';
+  return `<div class="circle-preview found">
+    <span class="avatars" aria-hidden="true">${p.names.slice(0, 4).map((n, i) => `<span class="avatar" style="--h:${(i * 83 + 40) % 360}">${initialOf(n)}</span>`).join('')}</span>
+    <p><b>${esc(p.cn || 'Un cercle de proches')}</b>${names ? `<small>${esc(names)}</small>` : ''}${p.full ? '<small class="err-text">Ce cercle est complet.</small>' : ''}</p>
+  </div>`;
+}
+
+function memberRow(m, c) {
+  const { state, today } = c;
+  const v = memberView(m.status, today);
+  const days = weekKeys(today);
+  const kind = v.state === 'done' ? 'cheer' : 'nudge';
+  const sent = !canSend(state.circle, m.mid, kind, today);
+  const action = m.me
+    ? ''
+    : `<button class="btn small ghost" data-action="circle-sign" data-mid="${m.mid}" data-kind="${kind}" ${sent ? 'disabled' : ''}>${sent ? '✓ Envoyé' : `${SIGNS[kind].emoji} ${SIGNS[kind].label}`}</button>`;
+  return `<li class="member card state-${v.state} ${m.me ? 'me' : ''}">
+    ${avatar(m.mid, v.name, v.state === 'done')}
+    <div class="m-main">
+      <p class="m-name"><b>${esc(m.me ? state.name || v.name : v.name)}</b>${m.me ? '<em class="tag-me">Toi</em>' : ''}</p>
+      <p class="m-state">${STATE_TEXT[v.state][m.me ? 1 : 0]}</p>
+      <span class="m-week" role="img" aria-label="Cette semaine : ${v.week.filter(Boolean).length} jour${v.week.filter(Boolean).length > 1 ? 's' : ''} sur 7">${v.week.map((on, i) => `<i class="${on ? 'on' : ''} ${days[i] === today ? 'today' : ''}"></i>`).join('')}</span>
+    </div>
+    <div class="m-side">
+      <span class="m-streak ${v.streak > 0 ? 'lit' : ''}" aria-label="Série : ${count(v.streak, 'jour')}">${icon.flame(18)}<b>${v.streak}</b></span>
+      ${action}
+    </div>
+  </li>`;
+}
+
+export function circleView(c) {
+  const { state, ui, today } = c;
+  const cs = ui.circle;
+  const circle = state.circle;
+  const head = '<header class="page-head rise"><h1>Cercle</h1></header>';
+  const err = (text) => (text ? `<p class="fine err" role="alert">${esc(text)}</p>` : '');
+
+  // ----- Formulaires : créer, rejoindre -----
+  if (!circle && cs.form === 'create') {
+    return `${head}
+    <form class="card circle-form rise" data-form="circle-create" novalidate>
+      <h2>Créer un cercle</h2>
+      <p class="muted">Tu recevras un lien à envoyer à tes proches. Jusqu’à ${MAX_MEMBERS} personnes.</p>
+      <label class="field"><span>Ton prénom</span>
+        <input class="text-input wide" type="text" maxlength="24" autocomplete="given-name" placeholder="Ton prénom" value="${esc(cs.name)}" data-input="circle-name" />
+      </label>
+      <label class="field"><span>Nom du cercle <small>(facultatif)</small></span>
+        <input class="text-input wide" type="text" maxlength="24" placeholder="La famille, les copains…" value="${esc(cs.cname)}" data-input="circle-cname" />
+      </label>
+      ${err(cs.error)}
+      <button class="cta" type="submit" ${cs.busy ? 'disabled' : ''}>${cs.busy ? 'Création…' : 'Créer le cercle'}</button>
+      <button class="link-btn" type="button" data-action="circle-cancel">Annuler</button>
+    </form>`;
+  }
+  if (!circle && cs.form === 'join') {
+    return `${head}
+    <form class="card circle-form rise" data-form="circle-join" novalidate>
+      <h2>${cs.invited ? 'Tu es invité' : 'Rejoindre un cercle'}</h2>
+      <div data-slot="circle-preview">${circlePreviewView(cs)}</div>
+      <p class="muted">${cs.invited ? 'Indique ton prénom pour que tes proches te reconnaissent.' : 'Saisis le code reçu de la personne qui t’invite.'}</p>
+      ${cs.invited ? '' : `<label class="field"><span>Code du cercle</span>
+        <input class="text-input wide code-in" type="text" inputmode="numeric" autocomplete="off" placeholder="0000 0000 0000 0000" value="${esc(cs.code)}" data-input="circle-code" />
+      </label>`}
+      <label class="field"><span>Ton prénom</span>
+        <input class="text-input wide" type="text" maxlength="24" autocomplete="given-name" placeholder="Ton prénom" value="${esc(cs.name)}" data-input="circle-name" />
+      </label>
+      ${err(cs.error)}
+      <button class="cta" type="submit" ${cs.busy ? 'disabled' : ''}>${cs.busy ? 'Connexion…' : 'Rejoindre'}</button>
+      <button class="link-btn" type="button" data-action="circle-cancel">Annuler</button>
+    </form>`;
+  }
+
+  // ----- Pas encore de cercle -----
+  if (!circle) {
+    return `${head}
+    <section class="card circle-hero rise">
+      <span class="avatars big" aria-hidden="true">${[260, 330, 190].map((h, i) => `<span class="avatar ${i < 2 ? 'done' : ''}" style="--h:${h}">${i < 2 ? `<i class="av-check">${icon.check(13)}</i>` : ''}</span>`).join('')}</span>
+      <h2>Respirez ensemble</h2>
+      <p class="lede">Retrouve tes proches dans un petit cercle : chacun voit qui a respiré aujourd’hui, et vous vous encouragez.</p>
+      <button class="cta" data-action="circle-form" data-form="create">Créer mon cercle</button>
+      <button class="btn wide" data-action="circle-form" data-form="join">J’ai une invitation</button>
+    </section>
+    <section class="card list rise">
+      <p class="list-title">Ce qui est partagé</p>
+      <p class="circle-note"><b>Seulement :</b> ton prénom, ta série et les jours de la semaine où tu as respiré. Jamais tes durées, tes ressentis ni ton historique.</p>
+      <p class="circle-note">Tout est chiffré avec le code du cercle : le serveur ne peut rien lire. Pas de compte, pas d’e-mail. Tu peux quitter quand tu veux.</p>
+    </section>`;
+  }
+
+  // ----- Dans un cercle -----
+  const members = sortMembers(cs.members, today);
+  const sum = summarize(members, today);
+  const others = members.length - members.filter((m) => m.me).length;
+  const title = circle.cn || members.map((m) => m.status.cn).find(Boolean) || 'Ton cercle';
+  const sub = !members.length
+    ? cs.loading ? 'Chargement…' : cs.error ? 'Hors ligne' : ''
+    : `${count(sum.total, 'personne')} · ${sum.done} ${sum.done > 1 ? 'ont' : 'a'} respiré aujourd’hui`;
+  const updated = cs.at ? `Mis à jour ${ago(cs.at)}` : '';
+  return `${head}
+    <section class="circle-top rise">
+      <div><h2>${esc(title)}</h2><p class="muted">${esc(sub)}</p></div>
+      <button class="icon-btn ${cs.loading ? 'spin' : ''}" data-action="circle-refresh" aria-label="Actualiser" ${cs.loading ? 'disabled' : ''}>${icon.refresh(20)}</button>
+    </section>
+    ${eventBanners(cs.events)}
+    ${err(cs.error)}
+    ${members.length ? `<ul class="member-list rise">${members.map((m) => memberRow(m, c)).join('')}</ul>` : cs.loading ? '<p class="muted center rise">Chargement du cercle…</p>' : ''}
+
+    <section class="card invite rise ${others ? '' : 'first'}">
+      <p class="list-title">${others ? 'Inviter un proche' : 'Invite tes proches'}</p>
+      <p class="muted">${others ? 'Envoie le lien du cercle : il suffit de le toucher pour rejoindre.' : 'Ton cercle est encore vide. Envoie-leur le lien : il suffit de le toucher pour rejoindre.'}</p>
+      <button class="btn wide accent" data-action="circle-share">Inviter par lien</button>
+      <button class="btn wide ghost" data-action="circle-copy">${cs.copied ? '✓ Lien copié' : 'Copier le lien'}</button>
+      <button class="link-btn" data-action="circle-show-code">${cs.showCode ? 'Masquer le code' : 'Afficher le code'}</button>
+      ${cs.showCode ? `<div class="code-box"><span class="code" aria-label="Code du cercle">${esc(formatCode(circle.code))}</span><p class="fine">Quelqu’un qui a ce code peut rejoindre le cercle et lire les statuts. Ne le partage qu’avec tes proches.</p></div>` : ''}
+    </section>
+
+    <div class="circle-foot rise">
+      ${updated ? `<p class="fine center">${esc(updated)}</p>` : ''}
+      <button class="link-btn danger" data-action="circle-leave">Quitter le cercle</button>
+    </div>`;
 }
 
 // ---------- Progrès ----------
