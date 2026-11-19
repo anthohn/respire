@@ -356,7 +356,7 @@ function syncSection({ state, ui }) {
     ${u.revealed ? `
     <div class="code-box"><b class="code">${formatCode(sy.code)}</b><button class="btn" data-action="sync-copy">Copier</button></div>
     <form class="pw-form" data-form="sync-save" autocomplete="on" novalidate>
-      <label class="pw-row"><span>Identifiant</span><input class="text-input" type="text" name="username" value="Respire" autocomplete="username" readonly /></label>
+      <label class="pw-row"><span>Identifiant</span><input class="text-input" type="text" name="username" value="Respire" autocomplete="username" autocapitalize="off" spellcheck="false" /></label>
       <label class="pw-row"><span>Code</span><input class="text-input" type="password" name="password" value="${esc(sy.code)}" autocomplete="new-password" readonly /></label>
       <button type="submit" class="btn accent wide">Enregistrer dans mon gestionnaire de mots de passe</button>
     </form>
