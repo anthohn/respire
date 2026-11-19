@@ -2,6 +2,10 @@
 
 export const TIPS = [
   {
+    title: 'Ça devient naturel',
+    text: 'Au début, suivre le rythme demande un effort : c’est normal, ton corps a pris d’autres habitudes. En le faisant consciemment, tu l’installes peu à peu, jusqu’à ce que tu n’y penses plus.',
+  },
+  {
     title: 'Le nez, d’abord',
     text: 'Le nez filtre, réchauffe et humidifie l’air avant qu’il n’arrive aux poumons. Bouche fermée, langue posée contre le palais : c’est la position de repos.',
   },
@@ -49,6 +53,9 @@ export const HINTS = {
   hold1: ['Reste détendu', 'Sans crispation'],
   hold2: ['Reste détendu', 'Sans crispation'],
 };
+
+/** Affiché une fois, à la deuxième expiration, pendant les premières sessions. */
+export const BEGINNER_HINT = 'Tu manques d’air ? C’est normal. Respire comme tu veux, puis reprends le fil.';
 
 export const PHASE_LABEL = {
   inhale: 'Inspire',

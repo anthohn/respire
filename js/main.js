@@ -219,6 +219,7 @@ function startSession() {
     sound: state.settings.sound,
     soundMode: state.settings.soundMode,
     soundVolume: state.settings.soundVolume,
+    beginner: state.sessions.length < 5,
     haptics: state.settings.haptics,
     pipAuto: state.settings.pipAuto && ui.pipSupported,
     onNotice: toast,

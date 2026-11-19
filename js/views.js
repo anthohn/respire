@@ -490,6 +490,7 @@ export function onboardingView(ob) {
         <li><span class="pt">2</span><div><b>Léger et silencieux</b><p>Un souffle doux, sans effort : ton corps sait respirer, laisse-le faire.</p></div></li>
         <li><span class="pt">3</span><div><b>Expirer plus longtemps</b><p>Une expiration lente est ce qui apaise le corps.</p></div></li>
       </ul>
+      <p class="ob-reassure">Au début, suivre le rythme peut être difficile : c’est normal, ton corps a pris d’autres habitudes. À force de répéter, il le retrouve, sans que tu y penses.</p>
       <button class="cta" data-action="ob-next">Continuer</button>`;
   } else {
     body = `

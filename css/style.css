@@ -880,3 +880,4 @@ body.in-session .tabbar { display: none; }
 .range::-webkit-slider-thumb { -webkit-appearance: none; width: 28px; height: 28px; border-radius: 50%; background: #fff; border: 0; box-shadow: 0 2px 10px rgba(20, 30, 80, 0.4); }
 .range::-moz-range-thumb { width: 28px; height: 28px; border-radius: 50%; background: #fff; border: 0; box-shadow: 0 2px 10px rgba(20, 30, 80, 0.4); }
 .range:focus-visible { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); }
+.ob-reassure { max-width: 34ch; font-size: 16px; font-weight: 700; line-height: 1.45; color: var(--ink); }
