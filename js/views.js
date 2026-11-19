@@ -334,11 +334,15 @@ export function settingsView(c) {
 
   <section class="card list rise">
     <p class="list-title">Pendant la session</p>
-    ${toggle('sound', s.sound, 'Son doux', 'Un souffle d’air qui suit le tien : il monte à l’inspiration et s’éteint à l’expiration')}
+    ${toggle('sound', s.sound, 'Repères sonores', 'Très discrets : le son monte quand tu inspires, descend quand tu expires')}
     ${s.sound ? `<div class="row stack">
       <span class="row-text"><b>Ambiance</b><small>${esc((SOUND_MODES.find((m) => m.id === s.soundMode) || SOUND_MODES[0]).blurb)}</small></span>
       ${seg(SOUND_MODES.map((m) => [m.id, m.name]), s.soundMode, 'set-sound-mode', 'mode')}
       <button class="btn wide ghost" data-action="preview-sound">${icon.volume(18)} Écouter un aperçu</button>
+    </div>
+    <div class="row stack">
+      <span class="row-text"><b>Volume</b><small>Règle-le pour qu’il reste juste audible derrière ton travail.</small></span>
+      <span class="range-row"><input class="range" type="range" min="0" max="100" step="5" value="${s.soundVolume}" data-input="volume" aria-label="Volume des repères sonores" /><b class="vol-val">${s.soundVolume} %</b></span>
     </div>` : ''}
     ${toggle('haptics', s.haptics, 'Vibrations', 'Une légère impulsion à chaque changement de phase')}
     ${ui.pipSupported ? toggle('pipAuto', s.pipAuto, 'Fenêtre flottante', 'Ouvre la session dans une petite fenêtre toujours visible : tu respires pendant que tu travailles') : ''}
@@ -415,7 +419,7 @@ export function sheetView(c) {
     </div>
 
     <div class="list inset">
-      ${toggle('sound', s.sound, 'Son doux')}
+      ${toggle('sound', s.sound, 'Repères sonores')}
       ${ui.pipSupported ? toggle('pipAuto', s.pipAuto, 'Fenêtre flottante') : toggle('haptics', s.haptics, 'Vibrations')}
     </div>
   </div>

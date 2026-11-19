@@ -12,7 +12,8 @@ const defaults = () => ({
     presetId: 'long',
     minutes: 5,
     sound: false,
-    soundMode: 'souffle',
+    soundMode: 'glisse',
+    soundVolume: 60,
     haptics: true,
     pipAuto: false,
     theme: 'auto',
@@ -26,10 +27,13 @@ export function load() {
     const raw = localStorage.getItem(KEY);
     if (!raw) return base;
     const data = JSON.parse(raw);
+    const settings = { ...base.settings, ...(data.settings || {}) };
+    // Anciennes ambiances (souffle, vague, carillon) : remplacées par les nouveaux repères discrets.
+    if (!['glisse', 'bulle', 'fil'].includes(settings.soundMode)) settings.soundMode = base.settings.soundMode;
     return {
       ...base,
       ...data,
-      settings: { ...base.settings, ...(data.settings || {}) },
+      settings,
       sessions: Array.isArray(data.sessions) ? data.sessions : [],
       seenBadges: Array.isArray(data.seenBadges) ? data.seenBadges : [],
     };

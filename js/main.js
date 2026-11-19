@@ -82,6 +82,7 @@ async function previewSound() {
   stopPreview();
   const sound = new Sound();
   sound.setMode(state.settings.soundMode);
+  sound.setVolume(state.settings.soundVolume);
   preview = { sound };
   if (!(await sound.unlock())) {
     stopPreview();
@@ -217,6 +218,7 @@ function startSession() {
     minutes: state.settings.minutes,
     sound: state.settings.sound,
     soundMode: state.settings.soundMode,
+    soundVolume: state.settings.soundVolume,
     haptics: state.settings.haptics,
     pipAuto: state.settings.pipAuto && ui.pipSupported,
     onNotice: toast,
@@ -504,6 +506,10 @@ document.addEventListener('change', (e) => {
       if (!t.checked) stopPreview();
       if (ui.tab === 'settings') render({ animate: false, keepScroll: true });
     }
+  } else if (t.dataset.input === 'volume') {
+    state.settings.soundVolume = Number(t.value);
+    save(state);
+    previewSound(); // on entend tout de suite le nouveau volume
   } else if (t.dataset.input === 'reminder') {
     state.settings.reminder = t.value || '08:00';
     save(state);
@@ -512,7 +518,10 @@ document.addEventListener('change', (e) => {
 
 document.addEventListener('input', (e) => {
   const t = e.target;
-  if (t.dataset.input === 'name') {
+  if (t.dataset.input === 'volume') {
+    const label = t.closest('.range-row')?.querySelector('.vol-val');
+    if (label) label.textContent = `${t.value} %`;
+  } else if (t.dataset.input === 'name') {
     state.name = t.value.trim();
     save(state);
   } else if (t.dataset.input === 'ob-name') {

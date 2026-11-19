@@ -37,6 +37,7 @@ export class Session {
     this.hapticsOn = opts.haptics;
     this.sound = new Sound();
     this.sound.setMode(opts.soundMode);
+    this.sound.setVolume(opts.soundVolume);
     this.mode = 'intro'; // intro | run | paused | done
     this.elapsed = 0;
     this.intro = INTRO_SECONDS;
@@ -267,7 +268,7 @@ export class Session {
     this.root.classList.add('running');
     if (this.soundOn && this.sound.ctx) {
       this.sound.start();
-      this.sound.chime(392, 0.07);
+      this.sound.chime('start');
     }
   }
 
@@ -568,18 +569,23 @@ export class Session {
     this.elapsed = this.total;
     this.paint(0, this.total);
     this.ringBar.style.strokeDashoffset = '0';
-    this.end();
+    this.end(true);
     this.shown.title = '';
     if (!this.pipWin) document.title = 'Session terminée — Respire';
-    if (this.soundOn && this.sound.ctx) this.sound.chime(523.25, 0.13);
     if (this.hapticsOn) vibrate([50, 90, 50]);
     this.opts.onFinish({ seconds: this.total, cycles: this.cycles, completed: true });
   }
 
-  end() {
+  end(withChime = false) {
     this.mode = 'done';
     this.stopTicker();
-    this.sound.stop();
+    if (withChime && this.soundOn && this.sound.g) {
+      // Repère de fin : on laisse le son se terminer avant de tout éteindre.
+      this.sound.chime('end');
+      this.sound.stop(this.sound.ctx.currentTime + 4.5);
+    } else {
+      this.sound.stop();
+    }
     try {
       this.wake?.release();
     } catch {
