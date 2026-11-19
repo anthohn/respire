@@ -8,6 +8,7 @@ import {
 import { DAY_LETTERS, MONTHS, FEELINGS, greeting, moment } from './content.js';
 import { journeyLayout, STEPS } from './journey.js';
 import { SOUND_MODES } from './audio.js';
+import { GUIDE_STYLES } from './track.js';
 import { formatCode } from './sync.js';
 
 export const esc = (s) =>
@@ -123,7 +124,7 @@ export function homeView(c) {
     <button class="hero-orb" data-action="start" aria-label="Commencer une session">${orb('idle')}</button>
     <button class="hero-hint" data-action="start" tabindex="-1" aria-hidden="true">Touche la bulle pour respirer</button>
     <button class="session-chip" data-action="open-sheet" aria-label="Modifier la session : ${esc(preset.name)}, ${patternLabel(preset)}, ${minutes} minutes">
-      <span><b>${esc(preset.name)}</b> <i>·</i> ${patternLabel(preset)} <i>·</i> ${minutes} min</span>${icon.settings(16)}
+      <span>${state.settings.audioMode ? `${icon.headphones(15)} ` : ''}<b>${esc(preset.name)}</b> <i>·</i> ${patternLabel(preset)} <i>·</i> ${minutes} min</span>${icon.settings(16)}
     </button>
   </section>
 
@@ -411,6 +412,17 @@ export function settingsView(c) {
   </section>
 
   <section class="card list rise">
+    <p class="list-title">Mode audio</p>
+    ${toggle('audioMode', s.audioMode, 'Écouter, écran éteint', 'Une séance sonore : elle continue écran verrouillé, avec des écouteurs ou en Bluetooth')}
+    <div class="row stack">
+      <span class="row-text"><b>Guidage</b><small>${esc((GUIDE_STYLES.find((g) => g.id === s.audioStyle) || GUIDE_STYLES[0]).blurb)}</small></span>
+      ${seg(GUIDE_STYLES.map((g) => [g.id, g.name]), s.audioStyle, 'set-audio-style', 'style')}
+      <button class="btn wide ghost" data-action="preview-audio">${icon.headphones(18)} Écouter un aperçu</button>
+    </div>
+    <p class="fine left">En voiture, lance la séance à l’arrêt et laisse l’écran éteint. Évite les rythmes avec une pause (4-7-8, Calme profond) : ils détendent beaucoup.</p>
+  </section>
+
+  <section class="card list rise">
     <p class="list-title">Rappel quotidien</p>
     <div class="row">
       <span class="row-text"><b>Heure habituelle</b><small>Ajoute un événement récurrent à ton calendrier : il te prévient tous les jours.</small></span>
@@ -483,10 +495,14 @@ export function sheetView(c, { dir = 0 } = {}) {
     <div class="seg big" role="radiogroup" aria-label="Durée">
       ${DURATIONS.map((d) => `<button role="radio" aria-checked="${d === s.minutes}" class="${d === s.minutes ? 'on' : ''}" data-action="pick-minutes" data-min="${d}">${d} min</button>`).join('')}
     </div>
+    <div class="seg mode-seg" role="radiogroup" aria-label="Mode">
+      <button role="radio" aria-checked="${!s.audioMode}" class="${s.audioMode ? '' : 'on'}" data-action="set-audio-mode" data-mode="screen">Écran</button>
+      <button role="radio" aria-checked="${s.audioMode}" class="${s.audioMode ? 'on' : ''}" data-action="set-audio-mode" data-mode="audio">${icon.headphones(17)} Audio</button>
+    </div>
   </div>
 
   <footer class="sheet-foot">
-    <button class="cta" data-action="start-from-sheet">Commencer · ${formatDuration(plan.totalSeconds)}<span class="cta-ico">${icon.chevronRight(20)}</span></button>
+    <button class="cta" data-action="start-from-sheet">${s.audioMode ? 'Écouter' : 'Commencer'} · ${formatDuration(plan.totalSeconds)}<span class="cta-ico">${icon.chevronRight(20)}</span></button>
   </footer>`;
 }
 

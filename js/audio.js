@@ -19,14 +19,14 @@ const clamp01 = (x) => Math.min(1, Math.max(0, x));
  * Les repères, définis une seule fois pour les deux moteurs (Web Audio et lecteur audio de secours).
  * [forme, de (Hz), vers (Hz), durée (s), niveau, coupure du filtre (Hz)]
  */
-const CUES = {
+export const CUES = {
   glisse: { inhale: ['glide', 330, 494, 1.3, 0.06, 2000], exhale: ['glide', 440, 294, 1.7, 0.05, 1300] }, // mi → si, la → ré
   bulle: { inhale: ['bubble', 300, 640, 0.17, 0.08], exhale: ['bubble', 600, 280, 0.22, 0.065] },
 };
-const CHIMES = { start: ['glide', 262, 392, 1.8, 0.05, 1500], end: ['glide', 392, 262, 2.6, 0.05, 1200] };
+export const CHIMES = { start: ['glide', 262, 392, 1.8, 0.05, 1500], end: ['glide', 392, 262, 2.6, 0.05, 1200] };
 
 /** Le curseur de volume est perceptif : 100 % reste doux, 0 % coupe le son. */
-const gainFor = (volume) => Math.pow(clamp01(volume / 100), 1.6);
+export const gainFor = (volume) => Math.pow(clamp01(volume / 100), 1.6);
 
 /** Petite pièce douce, pour que les notes se fondent au lieu de claquer. */
 function makeImpulse(ctx, seconds = 1.4) {

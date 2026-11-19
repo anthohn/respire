@@ -6,6 +6,8 @@ import { PRESETS, getPreset, phaseAt } from './breath.js';
 import { tipOfTheDay, finishMessage } from './content.js';
 import { homeView, progressView, settingsView, sheetView, doneView, onboardingView } from './views.js';
 import { Session } from './session.js';
+import { AudioSession } from './audiosession.js';
+import { renderTrack, wavBlob, TRACK_RATE } from './track.js';
 import { icon } from './icons.js';
 import { pipSupported } from './pip.js';
 import { Aura, readPalette } from './aura.js';
@@ -98,6 +100,51 @@ async function previewSound() {
   setTimeout(() => {
     if (preview && preview.sound === sound) stopPreview();
   }, (seconds + 3) * 1000);
+}
+
+// ---------- Aperçu du guidage audio ----------
+
+let guidePreview = null;
+
+function stopGuidePreview() {
+  if (!guidePreview) return;
+  const { audio, urls } = guidePreview;
+  guidePreview = null;
+  audio.pause();
+  audio.removeAttribute('src');
+  audio.load();
+  urls.forEach((u) => URL.revokeObjectURL(u));
+}
+
+/** Joue une respiration complète avec le guidage choisi. À appeler depuis un clic. */
+async function previewGuide() {
+  stopGuidePreview();
+  const audio = new Audio();
+  audio.setAttribute('playsinline', '');
+  const silence = URL.createObjectURL(wavBlob(new Int16Array(TRACK_RATE / 10)));
+  const me = (guidePreview = { audio, urls: [silence] });
+  audio.src = silence;
+  const fail = (e) => {
+    if (guidePreview === me) stopGuidePreview();
+    toast(`Le son n’a pas pu démarrer (${e?.name || 'lecture impossible'}).`);
+  };
+  try {
+    await audio.play(); // pendant le clic : débloque la lecture sur iPhone
+    audio.pause();
+  } catch (e) {
+    return fail(e);
+  }
+  const { pcm, rate } = await renderTrack({ preset: getPreset(state.settings.presetId), cycles: 1, lead: 1, tail: 2, style: state.settings.audioStyle });
+  if (guidePreview !== me) return;
+  const url = URL.createObjectURL(wavBlob(pcm, rate));
+  me.urls.push(url);
+  audio.src = url;
+  audio.addEventListener('ended', () => guidePreview === me && stopGuidePreview());
+  try {
+    await audio.play();
+  } catch (e) {
+    fail(e);
+  }
 }
 
 // ---------- Bulle de l'accueil ----------
@@ -336,8 +383,11 @@ function closeSheet({ instant = false } = {}) {
 function startSession() {
   if (session) return;
   const preset = getPreset(state.settings.presetId);
-  session = new Session(sessionEl, {
+  const Mode = state.settings.audioMode ? AudioSession : Session;
+  stopGuidePreview();
+  session = new Mode(sessionEl, {
     preset,
+    audioStyle: state.settings.audioStyle,
     minutes: state.settings.minutes,
     sound: state.settings.sound,
     soundMode: state.settings.soundMode,
@@ -591,6 +641,18 @@ const actions = {
     previewSound();
   },
   'preview-sound': () => previewSound(),
+  'preview-audio': () => previewGuide(),
+  'set-audio-style'(el) {
+    state.settings.audioStyle = el.dataset.style;
+    save(state);
+    render({ animate: false, keepScroll: true });
+    previewGuide();
+  },
+  'set-audio-mode'(el) {
+    state.settings.audioMode = el.dataset.mode === 'audio';
+    save(state);
+    refreshSheet();
+  },
   'set-theme'(el) {
     state.settings.theme = el.dataset.theme;
     save(state);

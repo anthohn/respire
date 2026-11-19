@@ -1,6 +1,7 @@
 // Persistance locale (localStorage). Aucune donnée ne quitte l'appareil.
 
 import { getPreset } from './breath.js';
+import { GUIDE_STYLES, DEFAULT_GUIDE } from './track.js';
 
 const KEY = 'respire:v1';
 
@@ -20,6 +21,8 @@ const defaults = () => ({
     soundVolume: 60,
     haptics: true,
     pipAuto: false,
+    audioMode: false, // séance sonore (écran éteint, écouteurs, Bluetooth)
+    audioStyle: DEFAULT_GUIDE,
     theme: 'auto',
     reminder: '08:00',
   },
@@ -35,6 +38,7 @@ export function load() {
     // Anciennes ambiances (souffle, vague, carillon) : remplacées par les nouveaux repères discrets.
     if (!['glisse', 'bulle', 'fil'].includes(settings.soundMode)) settings.soundMode = base.settings.soundMode;
     settings.presetId = getPreset(settings.presetId).id;
+    if (!GUIDE_STYLES.some((g) => g.id === settings.audioStyle)) settings.audioStyle = DEFAULT_GUIDE;
     return {
       ...base,
       ...data,

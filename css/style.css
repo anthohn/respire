@@ -967,3 +967,9 @@ body.in-session .tabbar { display: none; }
 .link-stack { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 2px; }
 .link-stack .link-btn { font-size: 14px; }
 .link-btn.danger { color: #d4493f; }
+
+/* ---------- Mode audio ---------- */
+.session.audio .a-ghost { opacity: 0.5; pointer-events: none; }
+.seg.mode-seg { margin-top: 10px; }
+.seg.mode-seg button { min-height: 40px; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.session-chip .ico:first-child { margin-right: -2px; color: var(--muted); }

@@ -1,0 +1,137 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { renderTrack, trackPlan, wavBlob, GUIDE_STYLES, TRACK_RATE, LEAD, TAIL } from '../js/track.js';
+import { PRESETS, phaseAt, cycleLength } from '../js/breath.js';
+
+const preset = (id) => PRESETS.find((p) => p.id === id);
+const peakOf = (pcm) => pcm.reduce((m, v) => Math.max(m, Math.abs(v) / 32768), 0);
+const rmsAt = (pcm, rate, t, w = 0.1) => {
+  const a = Math.max(0, Math.floor((t - w / 2) * rate));
+  const b = Math.min(pcm.length, Math.floor((t + w / 2) * rate));
+  let s = 0;
+  for (let i = a; i < b; i++) s += (pcm[i] / 32768) ** 2;
+  return Math.sqrt(s / Math.max(1, b - a));
+};
+const corr = (xs, ys) => {
+  const n = xs.length;
+  const mx = xs.reduce((a, b) => a + b, 0) / n;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < n; i++) {
+    sxy += (xs[i] - mx) * (ys[i] - my);
+    sxx += (xs[i] - mx) ** 2;
+    syy += (ys[i] - my) ** 2;
+  }
+  return sxy / Math.sqrt(sxx * syy);
+};
+
+test('piste : plan = installation + respirations + retombée', () => {
+  const p = preset('long');
+  const plan = trackPlan(p, 5);
+  assert.equal(plan.cycles, 30);
+  assert.equal(plan.breath, 300);
+  assert.equal(plan.total, LEAD + 300 + TAIL);
+  assert.equal(trackPlan(p, 5, { cycles: 2, lead: 1, tail: 2 }).total, 1 + 20 + 2);
+});
+
+for (const style of GUIDE_STYLES.map((g) => g.id)) {
+  test(`piste « ${style} » : bonne durée, discrète, sans claquement, silencieuse aux extrémités`, async () => {
+    const p = preset('long');
+    const { pcm, rate, plan } = await renderTrack({ preset: p, cycles: 4, style });
+    assert.equal(rate, TRACK_RATE);
+    assert.equal(pcm.length, Math.round(plan.total * rate));
+    const peak = peakOf(pcm);
+    assert.ok(peak > 0.2 && peak <= 0.5, `niveau ${peak}`);
+    assert.ok(Math.abs(pcm[0]) < 60 && Math.abs(pcm[pcm.length - 1]) < 60, 'départ et fin dans le silence');
+    // Un claquement serait un saut anormal à la jonction de deux cycles : on le compare à des endroits voisins de même niveau.
+    const maxJump = (t, w = 0.01) => {
+      let m = 0;
+      for (let i = Math.floor((t - w) * rate) + 1; i < Math.floor((t + w) * rate); i++) m = Math.max(m, Math.abs(pcm[i] - pcm[i - 1]) / 32768);
+      return m;
+    };
+    for (let c = 1; c < plan.cycles; c++) {
+      const seam = plan.lead + c * plan.len;
+      const baseline = Math.max(maxJump(seam - 0.5), maxJump(seam + 0.5));
+      assert.ok(maxJump(seam) <= 2 * baseline + 1e-4, `jonction ${c} : saut ${maxJump(seam)} contre ${baseline} alentour`);
+    }
+    for (const t of [plan.lead - 0.5, plan.lead + plan.breath + 0.5]) assert.ok(maxJump(t) < peak * 0.3, 'pas de saut à l’installation ni à la retombée');
+    // Pas de décalage continu (sinon claquement au démarrage et à l'arrêt).
+    let sum = 0;
+    for (const v of pcm) sum += v;
+    assert.ok(Math.abs(sum / pcm.length / 32768) < 0.005);
+  });
+}
+
+test('piste : fabrication identique à chaque fois (tests reproductibles)', async () => {
+  const a = await renderTrack({ preset: preset('long'), cycles: 2, style: 'vague' });
+  const b = await renderTrack({ preset: preset('long'), cycles: 2, style: 'vague' });
+  assert.deepEqual(a.pcm, b.pcm);
+});
+
+for (const style of ['vague', 'nappe']) {
+  test(`piste « ${style} » : le volume suit le souffle (monte en inspirant, redescend en expirant)`, async () => {
+    const p = preset('long');
+    const { pcm, rate, plan } = await renderTrack({ preset: p, cycles: 3, style });
+    const ts = [];
+    for (let t = 0; t < 3 * plan.len; t += 0.25) ts.push(t);
+    const env = ts.map((t) => rmsAt(pcm, rate, plan.lead + t));
+    const br = ts.map((t) => phaseAt(p, t).breath);
+    assert.ok(corr(env, br) > 0.93, `corrélation ${corr(env, br)}`);
+    // Poumons pleins nettement plus fort que poumons vides, mais le fond ne disparaît jamais.
+    const full = rmsAt(pcm, rate, plan.lead + 4);
+    const empty = rmsAt(pcm, rate, plan.lead + 0.05 + plan.len);
+    assert.ok(full > empty * 2.5, `plein ${full} / vide ${empty}`);
+    assert.ok(empty > 0.005, 'le fond reste audible : on sait que ça joue');
+  });
+}
+
+test('piste : pendant la rétention du 4-7-8, le son reste plein', async () => {
+  const p = preset('478');
+  const { pcm, rate, plan } = await renderTrack({ preset: p, cycles: 2, style: 'nappe' });
+  const full = rmsAt(pcm, rate, plan.lead + 4.5);
+  const held = rmsAt(pcm, rate, plan.lead + 9);
+  const end = rmsAt(pcm, rate, plan.lead + 18.5);
+  assert.ok(held > full * 0.9, 'la rétention garde le niveau');
+  assert.ok(end < full * 0.5, 'la fin d’expiration est bien plus douce');
+});
+
+test('piste « repères » : une note qui monte pour inspirer, une qui descend pour expirer', async () => {
+  const p = preset('long');
+  const { pcm, rate, plan } = await renderTrack({ preset: p, cycles: 2, style: 'reperes' });
+  const freq = (t, w = 0.1) => {
+    const a = Math.floor((t - w / 2) * rate);
+    const b = Math.floor((t + w / 2) * rate);
+    let n = 0;
+    for (let i = a + 1; i < b; i++) if (pcm[i - 1] < 0 !== pcm[i] < 0) n++;
+    return n / 2 / w;
+  };
+  const inhale = plan.lead; // début de la 1re inspiration
+  assert.ok(freq(inhale + 1.0) > freq(inhale + 0.2) + 60, 'monte');
+  const exhale = plan.lead + p.inhale + p.hold1;
+  assert.ok(freq(exhale + 0.2) > freq(exhale + 1.3) + 60, 'descend');
+  // Silence entre les deux : rien pendant la fin de l'expiration.
+  assert.ok(rmsAt(pcm, rate, plan.lead + 9.5) < 0.01);
+});
+
+test('piste : dix minutes se fabriquent vite, pour un fichier raisonnable', async () => {
+  const t0 = performance.now();
+  const { pcm } = await renderTrack({ preset: preset('long'), minutes: 10, style: 'vague' });
+  const ms = performance.now() - t0;
+  assert.ok(ms < 4000, `${Math.round(ms)} ms`);
+  assert.ok(pcm.byteLength < 16e6, `${(pcm.byteLength / 1e6).toFixed(1)} Mo`);
+});
+
+test('piste : fichier WAV valide', async () => {
+  const { pcm, rate } = await renderTrack({ preset: preset('long'), cycles: 1, style: 'nappe' });
+  const blob = wavBlob(pcm, rate);
+  const buf = new DataView(await blob.arrayBuffer());
+  const text = (o, n) => String.fromCharCode(...new Uint8Array(buf.buffer, o, n));
+  assert.equal(blob.size, 44 + pcm.length * 2);
+  assert.equal(text(0, 4), 'RIFF');
+  assert.equal(text(8, 4), 'WAVE');
+  assert.equal(text(36, 4), 'data');
+  assert.equal(buf.getUint32(24, true), rate);
+  assert.equal(buf.getUint32(40, true), pcm.length * 2);
+  for (const i of [0, 5000, 20000, pcm.length - 1]) assert.equal(buf.getInt16(44 + i * 2, true), pcm[i]);
+  assert.ok(cycleLength(preset('long')) === 10);
+});
