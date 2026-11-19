@@ -9,11 +9,13 @@ import { Session } from './session.js';
 import { pipSupported } from './pip.js';
 import { Aura } from './aura.js';
 import { Sound, scheduleDemo } from './audio.js';
+import { syncNow, enableSync, joinWithCode, deleteRemote, normalizeCode, formatCode, SyncError, SYNC_MESSAGES } from './sync.js';
 
 let state = load();
 const ui = {
   tab: 'home',
   cal: 0,
+  sync: { entering: false, revealed: false, busy: false, error: '', draft: '' },
   pipSupported: pipSupported(),
   linux: /linux/i.test(navigator.userAgent) && !/android/i.test(navigator.userAgent),
   canInstall: false,
@@ -264,6 +266,7 @@ function handleFinish({ seconds, cycles, completed }) {
   const streakIncreased = after.current > before.current;
   state.seenBadges = [...new Set([...state.seenBadges, ...earnedAfter])];
   save(state);
+  scheduleSync(1500);
 
   const data = {
     seconds,
@@ -332,7 +335,9 @@ function finishOnboarding() {
   state.onboarded = true;
   state.name = ui.ob.name.trim();
   state.settings.goalMin = ui.ob.goal;
+  touchPrefs();
   save(state);
+  scheduleSync();
   obEl.classList.remove('open');
   setTimeout(() => {
     obEl.hidden = true;
@@ -382,6 +387,48 @@ function buildReminder(time) {
   ].join('\r\n');
 }
 
+// ---------- Synchronisation ----------
+
+let syncTimer = 0;
+
+const refreshSettings = () => {
+  if (ui.tab === 'settings') render({ animate: false, keepScroll: true });
+};
+
+/** Les préférences qui voyagent (prénom, objectif, rythme, durée) : la modification la plus récente gagne. */
+function touchPrefs() {
+  state.prefsAt = Date.now();
+}
+
+/** Synchronise bientôt (regroupe plusieurs changements rapprochés en une seule synchronisation). */
+function scheduleSync(delay = 2500) {
+  if (!state.sync) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => runSync(), delay);
+}
+
+function syncFailure(e) {
+  return e instanceof SyncError ? SYNC_MESSAGES[e.code] || SYNC_MESSAGES.server : SYNC_MESSAGES.server;
+}
+
+async function runSync({ manual = false } = {}) {
+  if (!state.sync || ui.sync.busy) return;
+  ui.sync.busy = true;
+  ui.sync.error = '';
+  refreshSettings();
+  try {
+    const { changed } = await syncNow(state);
+    save(state);
+    if (changed) render({ animate: false, keepScroll: true });
+    if (manual) toast(changed ? 'Données mises à jour' : 'Tout est à jour');
+  } catch (e) {
+    // Hors connexion : on réessaiera tout seul, sans déranger.
+    if (manual || !(e instanceof SyncError && e.code === 'offline')) ui.sync.error = syncFailure(e);
+  }
+  ui.sync.busy = false;
+  refreshSettings();
+}
+
 // ---------- Actions (clics) ----------
 
 const actions = {
@@ -398,17 +445,23 @@ const actions = {
   },
   'pick-preset'(el) {
     state.settings.presetId = el.dataset.id;
+    touchPrefs();
     save(state);
+    scheduleSync();
     refreshSheet();
   },
   'pick-minutes'(el) {
     state.settings.minutes = Number(el.dataset.min);
+    touchPrefs();
     save(state);
+    scheduleSync();
     refreshSheet();
   },
   'set-goal'(el) {
     state.settings.goalMin = Number(el.dataset.min);
+    touchPrefs();
     save(state);
+    scheduleSync();
     render({ animate: false, keepScroll: true });
   },
   'set-sound-mode'(el) {
@@ -424,6 +477,97 @@ const actions = {
     applyTheme();
     render({ animate: false, keepScroll: true });
   },
+  async 'sync-enable'() {
+    ui.sync.busy = true;
+    ui.sync.error = '';
+    refreshSettings();
+    try {
+      await enableSync(state);
+      save(state);
+      ui.sync.revealed = true; // on montre le code tout de suite, pour qu'il soit rangé
+    } catch (e) {
+      ui.sync.error = syncFailure(e);
+    }
+    ui.sync.busy = false;
+    refreshSettings();
+  },
+  'sync-enter'() {
+    ui.sync.entering = true;
+    ui.sync.error = '';
+    refreshSettings();
+  },
+  'sync-cancel'() {
+    ui.sync.entering = false;
+    ui.sync.error = '';
+    refreshSettings();
+  },
+  async 'sync-join'() {
+    const input = document.querySelector('[data-input="sync-code"]');
+    ui.sync.draft = input?.value || ui.sync.draft;
+    if (!normalizeCode(ui.sync.draft)) {
+      ui.sync.error = SYNC_MESSAGES.invalid;
+      refreshSettings();
+      return;
+    }
+    ui.sync.busy = true;
+    ui.sync.error = '';
+    refreshSettings();
+    try {
+      await joinWithCode(state, ui.sync.draft);
+      save(state);
+      ui.sync.entering = false;
+      ui.sync.draft = '';
+      toast('Synchronisation activée');
+      render({ animate: false, keepScroll: true });
+    } catch (e) {
+      ui.sync.error = syncFailure(e);
+    }
+    ui.sync.busy = false;
+    refreshSettings();
+  },
+  'sync-now': () => runSync({ manual: true }),
+  'sync-reveal'() {
+    ui.sync.revealed = !ui.sync.revealed;
+    refreshSettings();
+  },
+  async 'sync-copy'() {
+    try {
+      await navigator.clipboard.writeText(state.sync.code);
+      toast('Code copié');
+    } catch {
+      toast('Copie impossible : sélectionne le code à la main');
+    }
+  },
+  async 'sync-disable'() {
+    const ok = await askConfirm({
+      title: 'Désactiver la synchronisation ?',
+      text: 'Tes données restent sur cet appareil et sur le serveur. Tu pourras réactiver la synchronisation avec ton code.',
+      ok: 'Désactiver',
+    });
+    if (!ok) return;
+    state.sync = null;
+    ui.sync.revealed = false;
+    save(state);
+    refreshSettings();
+  },
+  async 'sync-delete'() {
+    const ok = await askConfirm({
+      title: 'Supprimer du serveur ?',
+      text: 'Tes données du serveur seront effacées pour de bon. Elles restent sur cet appareil, mais ne seront plus synchronisées avec les autres.',
+      ok: 'Supprimer',
+    });
+    if (!ok) return;
+    try {
+      await deleteRemote(state);
+      state.sync = null;
+      ui.sync.revealed = false;
+      save(state);
+      toast('Données supprimées du serveur');
+    } catch (e) {
+      ui.sync.error = syncFailure(e);
+    }
+    refreshSettings();
+  },
   'cal-prev'() {
     ui.cal -= 1;
     render({ animate: false, keepScroll: true });
@@ -437,13 +581,16 @@ const actions = {
     toast('Rappel prêt : ouvre le fichier pour l’ajouter à ton calendrier');
   },
   export() {
-    download('respire-donnees.json', 'application/json', JSON.stringify(state, null, 2));
+    const { sync, ...exportable } = state; // le code de synchronisation n'est jamais exporté
+    download('respire-donnees.json', 'application/json', JSON.stringify(exportable, null, 2));
     toast('Données exportées');
   },
   async reset() {
     const ok = await askConfirm({
       title: 'Tout effacer ?',
-      text: 'Ton historique, ta série et tes trophées seront supprimés de cet appareil. Cette action est définitive.',
+      text: state.sync
+        ? 'Ton historique, ta série et tes trophées seront supprimés de cet appareil, et la synchronisation sera désactivée ici. Les données restent sur le serveur : tu pourras les retrouver avec ton code.'
+        : 'Ton historique, ta série et tes trophées seront supprimés de cet appareil. Cette action est définitive.',
       ok: 'Effacer',
     });
     if (!ok) return;
@@ -480,6 +627,7 @@ const actions = {
     if (!rec) return;
     rec.feeling = el.dataset.id;
     save(state);
+    scheduleSync();
     sessionEl.querySelectorAll('.feel').forEach((b) => {
       const on = b === el;
       b.classList.toggle('on', on);
@@ -523,7 +671,12 @@ document.addEventListener('input', (e) => {
     if (label) label.textContent = `${t.value} %`;
   } else if (t.dataset.input === 'name') {
     state.name = t.value.trim();
+    touchPrefs();
     save(state);
+    scheduleSync();
+  } else if (t.dataset.input === 'sync-code') {
+    t.value = formatCode(t.value.replace(/\D/g, '').slice(0, 16));
+    ui.sync.draft = t.value;
   } else if (t.dataset.input === 'ob-name') {
     ui.ob.name = t.value;
   }
@@ -541,8 +694,12 @@ window.addEventListener('beforeinstallprompt', (e) => {
 });
 
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && !session) render({ animate: false, keepScroll: true });
+  if (document.hidden) return;
+  if (!session) render({ animate: false, keepScroll: true });
+  if (state.sync && Date.now() - state.sync.lastSync > 60000) scheduleSync(300);
 });
+
+window.addEventListener('online', () => scheduleSync(500));
 
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
 
@@ -551,6 +708,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyThe
 applyTheme();
 applyMoment();
 render();
+scheduleSync(600);
 if (!state.onboarded) {
   ui.ob = { step: 0, name: state.name, goal: state.settings.goalMin };
   showOnboarding();

@@ -18,6 +18,26 @@ L'objectif n'est pas de « faire de la relaxation » de temps en temps, mais d'i
 - **Application installable (PWA)** et utilisable hors ligne. Toutes les données restent sur l'appareil (aucun compte, aucun serveur).
 - **Rappel quotidien** : génère un événement récurrent à ajouter à ton calendrier (fonctionne sur tous les téléphones, sans serveur).
 
+## Synchronisation entre appareils (anonyme)
+
+Dans Réglages → Synchronisation : « Activer » crée un **code de 16 chiffres** (à ranger dans un gestionnaire de mots de passe) ; sur un autre appareil, « J'ai un code » le retrouve.
+
+- **Aucun compte, aucun e-mail.** Du code on dérive, sur l'appareil, un identifiant et une clé de chiffrement (PBKDF2 à 600 000 tours, AES-GCM). Le serveur ne reçoit que du texte chiffré : il ne peut lire ni l'historique ni le prénom, et ne connaît pas le code.
+- **Rien ne se perd** : les sessions de tous les appareils s'additionnent. Pour le prénom, l'objectif, le rythme et la durée, la modification la plus récente gagne. Le thème, le son et les vibrations restent propres à chaque appareil.
+- **Un code mal saisi ne crée jamais de compte** (rejoindre ne fait que retrouver une fiche existante).
+- **Perdre le code = perdre l'accès** aux données synchronisées (elles restent sur les appareils déjà connectés). L'export JSON ne contient jamais le code.
+- Limites actuelles : pas de limitation de débit sur l'API ; fiche supprimée après 400 jours sans écriture ; ~2 500 sessions au maximum par code.
+
+### Mise en place sur Vercel (une fois)
+
+L'API (`api/sync.js`) stocke les données chiffrées dans une base Redis.
+
+1. Dans le projet Vercel : **Storage → Create / Marketplace → Upstash (Redis)**, gratuit, puis le **connecter au projet**.
+2. Vercel ajoute les variables d'environnement tout seul (`KV_REST_API_URL` et `KV_REST_API_TOKEN`, ou `UPSTASH_REDIS_REST_URL` et `UPSTASH_REDIS_REST_TOKEN`, les deux sont reconnues).
+3. **Redéployer** le projet, puis tester dans Réglages → Synchronisation → Activer.
+
+Sans base configurée, l'API répond « synchronisation non activée sur ce serveur » ; en local (`npm start`), elle utilise la mémoire du processus (perdue à l'arrêt).
+
 ## Lancer en local
 
 Aucune dépendance : il faut seulement Node.js (version 20 ou plus).
@@ -61,6 +81,8 @@ js/stats.js           séries, niveaux, trophées
 js/journey.js         géométrie du chemin « Ton ascension »
 js/audio.js           son doux généré en direct (Web Audio)
 js/store.js           stockage local
+js/sync.js            synchronisation (code, chiffrement, fusion)
+api/sync.js           API de synchronisation (Vercel), api/_store.js : stockage
 js/content.js         textes
 sw.js, manifest.webmanifest, icons/   PWA
 tests/                tests unitaires

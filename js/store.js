@@ -7,6 +7,8 @@ const defaults = () => ({
   name: '',
   sessions: [],
   seenBadges: [],
+  prefsAt: 0, // dernière modification des préférences synchronisées
+  sync: null, // { code, rev, lastSync } quand la synchronisation est activée
   settings: {
     goalMin: 5,
     presetId: 'long',

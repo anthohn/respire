@@ -8,6 +8,7 @@ import {
 import { DAY_LETTERS, MONTHS, FEELINGS, greeting, moment } from './content.js';
 import { journeyLayout, STEPS } from './journey.js';
 import { SOUND_MODES } from './audio.js';
+import { formatCode } from './sync.js';
 
 export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
@@ -311,6 +312,56 @@ export function progressView(c) {
 
 // ---------- Réglages ----------
 
+const ago = (ts) => {
+  if (!ts) return 'jamais';
+  const s = Math.round((Date.now() - ts) / 1000);
+  if (s < 45) return 'à l’instant';
+  const m = Math.round(s / 60);
+  if (m < 60) return `il y a ${m} min`;
+  const h = Math.round(m / 60);
+  return h < 24 ? `il y a ${h} h` : `il y a ${Math.round(h / 24)} j`;
+};
+
+function syncSection({ state, ui }) {
+  const sy = state.sync;
+  const u = ui.sync;
+  const error = u.error ? `<p class="fine left err" role="alert">${esc(u.error)}</p>` : '';
+  if (!sy) {
+    return `
+  <section class="card list rise">
+    <p class="list-title">Synchronisation</p>
+    <p class="fine left">Retrouve ton historique sur tous tes appareils, sans compte ni e-mail. Un code de 16 chiffres suffit, et tes données sont chiffrées : le serveur ne peut pas les lire.</p>
+    ${u.entering ? `
+    <input class="text-input wide code-input" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="19" placeholder="0000 0000 0000 0000" value="${esc(u.draft)}" data-input="sync-code" aria-label="Code de synchronisation" />
+    ${error}
+    <div class="btn-row">
+      <button class="btn ghost" data-action="sync-cancel">Annuler</button>
+      <button class="btn accent" data-action="sync-join" ${u.busy ? 'disabled' : ''}>${u.busy ? 'Connexion…' : 'Se connecter'}</button>
+    </div>` : `
+    ${error}
+    <div class="btn-row">
+      <button class="btn accent" data-action="sync-enable" ${u.busy ? 'disabled' : ''}>${u.busy ? 'Activation…' : 'Activer'}</button>
+      <button class="btn" data-action="sync-enter">J’ai un code</button>
+    </div>`}
+  </section>`;
+  }
+  return `
+  <section class="card list rise">
+    <p class="list-title">Synchronisation</p>
+    <p class="fine left"><b>Active</b> · dernière synchronisation ${ago(sy.lastSync)}${u.busy ? ' · en cours…' : ''}</p>
+    ${u.revealed ? `
+    <div class="code-box"><b class="code">${formatCode(sy.code)}</b><button class="btn" data-action="sync-copy">Copier</button></div>
+    <p class="fine left">Range ce code dans ton gestionnaire de mots de passe : c’est la seule façon de retrouver tes données sur un autre appareil. Ne le partage pas, et personne ne peut le récupérer à ta place.</p>` : ''}
+    ${error}
+    <div class="btn-row">
+      <button class="btn" data-action="sync-now" ${u.busy ? 'disabled' : ''}>Synchroniser</button>
+      <button class="btn" data-action="sync-reveal">${u.revealed ? 'Masquer le code' : 'Afficher mon code'}</button>
+    </div>
+    <button class="btn wide ghost" data-action="sync-disable">Désactiver sur cet appareil</button>
+    <button class="btn wide ghost danger" data-action="sync-delete">Supprimer mes données du serveur</button>
+  </section>`;
+}
+
 export function settingsView(c) {
   const { state, ui } = c;
   const s = state.settings;
@@ -357,6 +408,8 @@ export function settingsView(c) {
     </div>
     <button class="btn wide" data-action="add-reminder">${icon.bell(18)} Ajouter le rappel au calendrier</button>
   </section>
+
+  ${syncSection(c)}
 
   <section class="card list rise">
     <p class="list-title">Apparence</p>
