@@ -6,8 +6,8 @@ export const TIPS = [
     text: 'Le nez filtre, réchauffe et humidifie l’air avant qu’il n’arrive aux poumons. Bouche fermée, langue posée contre le palais : c’est la position de repos.',
   },
   {
-    title: 'Le ventre, pas la poitrine',
-    text: 'Le diaphragme est ton principal muscle respiratoire. Quand tu inspires, c’est le ventre qui se gonfle doucement, pas les épaules qui montent.',
+    title: 'Laisse le corps faire',
+    text: 'Pas besoin de choisir quel muscle utiliser ni où envoyer l’air : ton corps sait respirer. Ton rôle est seulement de ralentir, de rester léger et silencieux, et de laisser l’air entrer et sortir sans effort.',
   },
   {
     title: 'Expirer plus longtemps',
@@ -23,7 +23,7 @@ export const TIPS = [
   },
   {
     title: 'Pense à ta respiration',
-    text: 'Dans la journée, vérifie de temps en temps : bouche fermée ? ventre ou poitrine ? C’est ce réflexe qui, petit à petit, devient automatique.',
+    text: 'Dans la journée, vérifie de temps en temps : bouche fermée ? souffle léger et silencieux ? corps détendu ? C’est ce réflexe qui, petit à petit, devient automatique.',
   },
   {
     title: 'Sans forcer',
@@ -35,7 +35,7 @@ export const TIPS = [
   },
   {
     title: 'Le soir aussi',
-    text: 'Une session avant de dormir aide à relâcher la journée. Essaie de la faire au lit, allongé, une main sur le ventre.',
+    text: 'Une session avant de dormir aide à relâcher la journée. Essaie de la faire au lit, allongé, bien installé.',
   },
   {
     title: 'Associe-la à un geste',
@@ -44,8 +44,8 @@ export const TIPS = [
 ];
 
 export const HINTS = {
-  inhale: ['Par le nez, le ventre se gonfle', 'Laisse le ventre s’ouvrir', 'Doucement, sans forcer'],
-  exhale: ['Lentement, le ventre se vide', 'Relâche les épaules', 'Laisse l’air sortir tout seul'],
+  inhale: ['Par le nez, tout en douceur', 'Léger et silencieux', 'Sans effort, l’air entre tout seul'],
+  exhale: ['Lentement, laisse tout se relâcher', 'Relâche les épaules et la mâchoire', 'Laisse l’air sortir tout seul'],
   hold1: ['Reste détendu', 'Sans crispation'],
   hold2: ['Reste détendu', 'Sans crispation'],
 };
@@ -58,7 +58,7 @@ export const PHASE_LABEL = {
 };
 
 export const POSTURE = [
-  'Une main sur le ventre, l’autre sur la poitrine',
+  'Installe-toi confortablement, sans rien forcer',
   'Bouche fermée, langue contre le palais',
   'Épaules relâchées, mâchoire détendue',
 ];

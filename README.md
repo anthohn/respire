@@ -1,12 +1,12 @@
 # Respire
 
-Une application de respiration guidée, très simple, pour **réapprendre à respirer calmement** : par le nez, par le ventre, avec une expiration plus longue que l'inspiration. Quelques minutes par jour, jusqu'à ce que ça redevienne automatique.
+Une application de respiration guidée, très simple, pour **réapprendre à respirer calmement** : par le nez, sans forcer, avec une expiration plus longue que l'inspiration. Quelques minutes par jour, jusqu'à ce que ça redevienne automatique.
 
 L'objectif n'est pas de « faire de la relaxation » de temps en temps, mais d'installer une habitude. L'application est donc pensée autour de la régularité.
 
 ## Fonctionnalités
 
-- **Sessions guidées** : une aura qui se gonfle et se dégonfle au rythme choisi, avec consignes discrètes (« par le nez, le ventre se gonfle »), compte à rebours de chaque phase, son doux et vibrations en option.
+- **Sessions guidées** : une aura qui se gonfle et se dégonfle au rythme choisi, avec consignes discrètes (« par le nez, tout en douceur »), compte à rebours de chaque phase, son doux et vibrations en option.
 - **4 rythmes** : Premiers pas (3 · 4), Expiration longue (4 · 6, recommandé), Cohérence (5 · 5), Calme profond (4 · 2 · 6). Durées de 1, 3, 5 ou 10 minutes ; la session se termine toujours sur une expiration complète.
 - **Série (streak) indulgente** : une minute par jour suffit. Un jour manqué par semaine est offert (« jour de repos »), deux jours d'affilée cassent la série.
 - **Ascension** : un chemin qui monte de 0 à 100 jours, avec des paliers (3, 7, 14, 30, 60, 100) et un marqueur « Tu es ici ».
@@ -68,7 +68,7 @@ tests/                tests unitaires
 
 - Vraies notifications push (nécessite un petit serveur).
 - Sessions guidées par la voix.
-- Mesure de la respiration au quotidien : un « check-in » rapide dans la journée pour contrôler bouche fermée / ventre ou poitrine.
+- Mesure de la respiration au quotidien : un « check-in » rapide dans la journée pour contrôler bouche fermée, respiration légère et épaules calmes.
 - Autres langues.
 
 ## Important

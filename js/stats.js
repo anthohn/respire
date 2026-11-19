@@ -116,7 +116,7 @@ export const LEVELS = [
   { name: 'Graine', minutes: 0, blurb: 'Tout commence ici.' },
   { name: 'Pousse', minutes: 15, blurb: 'Le souffle se réveille.' },
   { name: 'Souffle', minutes: 45, blurb: 'Ta respiration devient plus lente.' },
-  { name: 'Brise', minutes: 100, blurb: 'Le ventre s’ouvre plus facilement.' },
+  { name: 'Brise', minutes: 100, blurb: 'Ton souffle devient plus ample.' },
   { name: 'Vague', minutes: 200, blurb: 'Le rythme s’installe.' },
   { name: 'Marée', minutes: 400, blurb: 'Une habitude solide.' },
   { name: 'Océan', minutes: 800, blurb: 'Respirer calmement te devient naturel.' },

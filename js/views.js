@@ -365,7 +365,7 @@ export function settingsView(c) {
 
   <section class="card list rise">
     <p class="list-title">À propos</p>
-    <p class="fine left">Respire t’aide à réapprendre une respiration calme : par le nez, par le ventre, avec une expiration plus longue que l’inspiration. Respire sans forcer. Si tu ressens des vertiges ou une gêne, reprends une respiration normale. Cette application ne remplace pas un avis médical.</p>
+    <p class="fine left">Respire t’aide à réapprendre une respiration calme : par le nez, sans forcer, avec une expiration plus longue que l’inspiration. Si tu ressens des vertiges ou une gêne, reprends une respiration normale. Cette application ne remplace pas un avis médical.</p>
     <button class="btn wide ghost" data-action="replay-intro">Revoir la présentation</button>
   </section>`;
 }
@@ -475,7 +475,7 @@ export function onboardingView(ob) {
       <h1 class="ob-title small">Trois repères</h1>
       <ul class="ob-points">
         <li><span class="pt">1</span><div><b>Par le nez</b><p>Bouche fermée, langue posée contre le palais.</p></div></li>
-        <li><span class="pt">2</span><div><b>Par le ventre</b><p>C’est lui qui se gonfle à l’inspiration, pas les épaules.</p></div></li>
+        <li><span class="pt">2</span><div><b>Léger et silencieux</b><p>Un souffle doux, sans effort : ton corps sait respirer, laisse-le faire.</p></div></li>
         <li><span class="pt">3</span><div><b>Expirer plus longtemps</b><p>Une expiration lente est ce qui apaise le corps.</p></div></li>
       </ul>
       <button class="cta" data-action="ob-next">Continuer</button>`;
