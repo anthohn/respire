@@ -360,6 +360,13 @@ export class Session {
         break;
       case 'pip': if (this.pipWin) this.leavePip(); else this.openPip(); break;
       case 'pip-return': this.leavePip(); break;
+      case 'pip-focus':
+        try {
+          this.pipWin?.focus();
+        } catch {
+          /* le navigateur refuse : « Ramener ici » reste possible */
+        }
+        break;
       default:
     }
   }
@@ -575,11 +582,13 @@ export class Session {
       <div class="away-card">
         <div class="away-orb">${orb('idle')}</div>
         <h2>Ta session continue dans la fenêtre flottante</h2>
-        <p>Tu peux changer d’onglet : elle reste au premier plan.</p>
+        <p>Tu ne la vois plus ? Selon ton système, elle peut passer derrière une autre fenêtre : la session, elle, continue.</p>
         <button class="cta" data-s="pip-return">Ramener ici${chevron}</button>
+        <button class="link-btn" data-s="pip-focus">Retrouver la fenêtre</button>
       </div>`;
     el.addEventListener('click', (e) => {
-      if (e.target.closest('[data-s="pip-return"]')) this.leavePip();
+      const btn = e.target.closest('[data-s]');
+      if (btn) this.act(btn.dataset.s);
     });
     document.body.append(el);
     this.away = el;
