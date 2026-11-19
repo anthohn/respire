@@ -333,9 +333,10 @@ function syncSection({ state, ui }) {
     <p class="fine left">Retrouve ton historique sur tous tes appareils, sans compte ni e-mail. Un code de 16 chiffres suffit, et tes données sont chiffrées : le serveur ne peut pas les lire.</p>
     ${u.entering ? `
     <form class="pw-form" data-form="sync-join" autocomplete="on" novalidate>
-      <input class="text-input wide" type="text" name="username" value="Respire" autocomplete="username" autocapitalize="off" spellcheck="false" aria-label="Identifiant" />
-      <input class="text-input wide code-input" type="password" name="password" inputmode="numeric" autocomplete="current-password" spellcheck="false" maxlength="19" placeholder="Code à 16 chiffres" value="${esc(u.draft)}" data-input="sync-code" aria-label="Code de synchronisation" />
-      <button type="button" class="link-btn" data-action="sync-peek">Afficher le code</button>
+      <div class="code-wrap">
+        <input class="text-input wide code-input" type="password" name="password" inputmode="numeric" autocomplete="current-password" spellcheck="false" maxlength="19" placeholder="Code à 16 chiffres" value="${esc(u.draft)}" data-input="sync-code" aria-label="Code de synchronisation" />
+        <button type="button" class="eye" data-action="sync-peek" aria-label="Afficher ou masquer le code">${icon.eye(20)}</button>
+      </div>
       ${error}
       <div class="btn-row">
         <button type="button" class="btn small ghost" data-action="sync-cancel">Annuler</button>
@@ -353,22 +354,19 @@ function syncSection({ state, ui }) {
   <section class="card list rise">
     <p class="list-title">Synchronisation</p>
     <p class="sync-status"><i class="dot"></i>Active · ${u.busy ? 'synchronisation en cours…' : `à jour ${ago(sy.lastSync)}`}</p>
-    ${u.revealed ? `
-    <div class="code-box"><b class="code">${formatCode(sy.code)}</b></div>
-    <form id="sync-save-form" class="pw-form quiet" data-form="sync-save" autocomplete="on" novalidate>
-      <label class="pw-row"><span>Identifiant</span><input class="text-input" type="text" name="username" value="Respire" autocomplete="username" autocapitalize="off" spellcheck="false" /></label>
-      <label class="pw-row"><span>Code</span><input class="text-input" type="password" name="password" value="${esc(sy.code)}" autocomplete="new-password" readonly /></label>
+    <form id="sync-save-form" class="pw-form" data-form="sync-save" autocomplete="on" novalidate>
+      <div class="code-wrap">
+        <input class="code-field" type="password" name="password" value="${formatCode(sy.code)}" autocomplete="new-password" readonly aria-label="Code de synchronisation" />
+        <button type="button" class="eye" data-action="sync-peek" aria-label="Afficher ou masquer le code">${icon.eye(20)}</button>
+      </div>
     </form>
     <div class="btn-row">
       <button type="button" class="btn small" data-action="sync-copy">Copier</button>
       <button type="submit" form="sync-save-form" class="btn small">Enregistrer</button>
     </div>
-    <p class="fine left">${ui.ios ? 'Sur iPhone : touche « Copier », puis ajoute le code dans l’app Mots de passe. ' : ''}Sans ce code, tu ne pourras pas retrouver tes données sur un autre appareil, et personne ne peut le récupérer à ta place. Ne le partage pas.</p>` : ''}
+    <p class="fine left">${ui.ios ? 'Sur iPhone : touche « Copier », puis ajoute le code dans l’app Mots de passe. ' : ''}Sans ce code, tu ne pourras pas retrouver tes données sur un autre appareil, et personne ne peut le récupérer à ta place. Ne le partage pas.</p>
     ${error}
-    <div class="btn-row">
-      <button class="btn small" data-action="sync-now" ${u.busy ? 'disabled' : ''}>Synchroniser</button>
-      <button class="btn small" data-action="sync-reveal">${u.revealed ? 'Masquer' : 'Afficher le code'}</button>
-    </div>
+    <button class="btn small wide" data-action="sync-now" ${u.busy ? 'disabled' : ''}>Synchroniser</button>
     <div class="link-stack">
       <button class="link-btn" data-action="sync-disable">Désactiver sur cet appareil</button>
       <button class="link-btn danger" data-action="sync-delete">Supprimer mes données du serveur</button>

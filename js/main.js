@@ -6,6 +6,7 @@ import { getPreset, phaseAt } from './breath.js';
 import { tipOfTheDay, finishMessage } from './content.js';
 import { homeView, progressView, settingsView, sheetView, doneView, onboardingView } from './views.js';
 import { Session } from './session.js';
+import { icon } from './icons.js';
 import { pipSupported } from './pip.js';
 import { Aura } from './aura.js';
 import { Sound, scheduleDemo } from './audio.js';
@@ -15,7 +16,7 @@ let state = load();
 const ui = {
   tab: 'home',
   cal: 0,
-  sync: { entering: false, revealed: false, busy: false, error: '', draft: '' },
+  sync: { entering: false, busy: false, error: '', draft: '' },
   ios: /iphone|ipad|ipod/i.test(navigator.userAgent),
   pipSupported: pipSupported(),
   linux: /linux/i.test(navigator.userAgent) && !/android/i.test(navigator.userAgent),
@@ -485,7 +486,6 @@ const actions = {
     try {
       await enableSync(state);
       save(state);
-      ui.sync.revealed = true; // on montre le code tout de suite, pour qu'il soit rangé
     } catch (e) {
       ui.sync.error = syncFailure(e);
     }
@@ -532,17 +532,13 @@ const actions = {
     refreshSettings();
   },
   'sync-peek'(el) {
-    const input = document.querySelector('[data-input="sync-code"]');
+    const input = el.closest('.code-wrap')?.querySelector('input');
     if (!input) return;
     const hidden = input.type === 'password';
     input.type = hidden ? 'text' : 'password';
-    el.textContent = hidden ? 'Masquer le code' : 'Afficher le code';
+    el.innerHTML = hidden ? icon.eyeOff(20) : icon.eye(20);
   },
   'sync-now': () => runSync({ manual: true }),
-  'sync-reveal'() {
-    ui.sync.revealed = !ui.sync.revealed;
-    refreshSettings();
-  },
   async 'sync-copy'() {
     try {
       await navigator.clipboard.writeText(state.sync.code);
@@ -559,7 +555,6 @@ const actions = {
     });
     if (!ok) return;
     state.sync = null;
-    ui.sync.revealed = false;
     save(state);
     refreshSettings();
   },
@@ -573,7 +568,6 @@ const actions = {
     try {
       await deleteRemote(state);
       state.sync = null;
-      ui.sync.revealed = false;
       save(state);
       toast('Données supprimées du serveur');
     } catch (e) {
@@ -690,7 +684,7 @@ async function saveToPasswordManager() {
   try {
     // Navigateurs basés sur Chromium (Chrome, Brave, Edge) : demande d'enregistrement directe.
     if (window.PasswordCredential && navigator.credentials?.store) {
-      await navigator.credentials.store(new PasswordCredential({ id: 'Respire', name: 'Respire', password: code }));
+      await navigator.credentials.store(new PasswordCredential({ id: 'Respire', name: 'Respire', password: formatCode(code) }));
       toast('Demande envoyée : valide-la dans ton gestionnaire de mots de passe');
       return;
     }
