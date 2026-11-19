@@ -109,6 +109,7 @@ export function homeView(c) {
   const showNudge = nd.tone === 'warn' || stats.sessions === 0;
   const doneDays = weekKeys(today).filter((k) => st.active.has(k)).length;
   const cta = st.todayDone ? 'Respirer encore' : 'Commencer';
+  const hint = st.todayDone ? 'Touche la bulle pour respirer encore' : 'Touche la bulle pour commencer';
 
   return `
   <header class="home-head rise">
@@ -121,7 +122,8 @@ export function homeView(c) {
   <section class="hero rise">
     <h1 class="hero-title">${state.name ? `<span class="hi">${greeting(now.getHours())}</span>${esc(state.name)}` : greeting(now.getHours())}</h1>
     <p class="lede">${lede({ stats, hour: now.getHours() })}</p>
-    <button class="hero-orb" data-action="start" aria-label="${cta}">${orb('idle')}<span class="hero-label">${cta}</span></button>
+    <button class="hero-orb" data-action="start" aria-label="${cta}">${orb('idle')}</button>
+    <button class="hero-hint" data-action="start" tabindex="-1" aria-hidden="true">${hint}</button>
     <button class="session-chip" data-action="open-sheet" aria-label="Modifier la session : ${esc(preset.name)}, ${patternLabel(preset)}, ${minutes} minutes">
       <span><b>${esc(preset.name)}</b> <i>·</i> ${patternLabel(preset)} <i>·</i> ${minutes} min</span>${icon.settings(16)}
     </button>

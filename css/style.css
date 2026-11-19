@@ -365,23 +365,16 @@ body.in-session .tabbar { display: none; }
 .hero-orb { display: block; width: min(66vw, 252px); margin: 10px 0 6px; border-radius: 50%; transition: transform 0.35s var(--ease); }
 .hero-orb:active { transform: scale(0.97); }
 .hero-orb:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 10px; border-radius: 50%; }
-/* La bulle est le bouton : le mot au centre dit quoi faire, comme « Inspire » pendant la session. */
-.hero-label {
-  position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; padding: 0 20%;
-  text-align: center; text-wrap: balance; font-size: clamp(20px, 5.8vw, 24px); font-weight: 300; line-height: 1.1; letter-spacing: -0.01em;
-  color: #fff; text-shadow: 0 1px 2px rgba(6, 12, 40, 0.35), 0 2px 26px rgba(6, 12, 40, 0.55); pointer-events: none;
-}
-/* Thème clair : la bulle est pâle, le mot passe en encre foncée. */
-:root[data-theme='light'] .hero-label { color: var(--ink); text-shadow: 0 0 16px rgba(255, 255, 255, 0.75); }
-@media (prefers-color-scheme: light) { :root[data-theme='auto'] .hero-label { color: var(--ink); text-shadow: 0 0 16px rgba(255, 255, 255, 0.75); } }
+/* La bulle est le bouton ; la phrase dessous le dit, sans rien écrire sur la bulle. */
+.hero-hint { margin-top: 4px; padding: 6px 12px; font-size: 15px; font-weight: 600; color: var(--ink); opacity: 0.85; }
 /* Le résumé de la session n'est pas un bouton d'action : une simple ligne sous la bulle. */
 .session-chip {
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  margin-top: 4px;
-  padding: 12px 14px;
-  font-size: 14.5px;
+  margin-top: 0;
+  padding: 6px 14px 12px;
+  font-size: 13.5px;
   color: var(--muted);
   transition: color 0.25s;
 }
