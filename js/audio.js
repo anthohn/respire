@@ -52,18 +52,44 @@ export class Sound {
     if (this.g) this.g.master.gain.setTargetAtTime(gainFor(this.volume), this.ctx.currentTime, 0.05);
   }
 
+  /** À appeler pendant un appui. En cas d'échec, `lastError` dit pourquoi (pour l'afficher). */
   async unlock() {
+    this.lastError = '';
     if (!this.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return false;
-      this.ctx = new AC();
-    }
-    if (this.ctx.state === 'suspended') {
-      try {
-        await this.ctx.resume();
-      } catch {
+      if (!AC) {
+        this.lastError = 'son indisponible';
         return false;
       }
+      try {
+        this.ctx = new AC();
+      } catch (e) {
+        this.lastError = e?.name || 'création impossible';
+        return false;
+      }
+    }
+    const ctx = this.ctx;
+    try {
+      // Safari sur iPhone : jouer un instant de silence pendant l'appui débloque la sortie audio.
+      const src = ctx.createBufferSource();
+      src.buffer = ctx.createBuffer(1, 1, 22050);
+      src.connect(ctx.destination);
+      src.start(0);
+    } catch {
+      /* sans conséquence : on tente quand même de reprendre */
+    }
+    if (ctx.state !== 'running') {
+      // « suspended » (page) ou « interrupted » (Safari après un appel ou Siri) : dans les deux cas il faut reprendre.
+      try {
+        await ctx.resume();
+      } catch (e) {
+        this.lastError = e?.name || 'reprise impossible';
+        return false;
+      }
+    }
+    if (ctx.state !== 'running') {
+      this.lastError = `état « ${ctx.state} »`;
+      return false;
     }
     return true;
   }

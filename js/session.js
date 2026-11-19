@@ -53,6 +53,7 @@ export class Session {
     this.confirming = false;
     this.destroyed = false;
     this.desktop = isDesktop();
+    this.canVibrate = typeof navigator.vibrate === 'function'; // Safari sur iPhone ne vibre pas
     this.canPip = pipSupported();
     this.win = window; // fenêtre qui pilote l'animation (celle de l'onglet, ou la fenêtre flottante)
     this.pipWin = null;
@@ -170,7 +171,7 @@ export class Session {
         <p class="s-preset">${esc(p.name)}<span>${patternLabel(p)}</span></p>
         <div class="s-toggles">
           <button class="icon-btn ${this.soundOn ? 'on' : ''}" data-s="sound" aria-pressed="${this.soundOn}" aria-label="Son doux">${this.soundOn ? icon.volume(22) : icon.volumeOff(22)}</button>
-          <button class="icon-btn ${this.hapticsOn ? 'on' : ''}" data-s="haptics" aria-pressed="${this.hapticsOn}" aria-label="Vibrations">${icon.vibrate(22)}</button>
+          ${this.canVibrate ? `<button class="icon-btn ${this.hapticsOn ? 'on' : ''}" data-s="haptics" aria-pressed="${this.hapticsOn}" aria-label="Vibrations">${icon.vibrate(22)}</button>` : ''}
           ${this.canPip ? `<button class="icon-btn" data-s="pip" aria-pressed="false" aria-label="Fenêtre flottante" title="Fenêtre flottante : continue à respirer pendant que tu travailles">${icon.pip(22)}</button>` : ''}
         </div>
       </header>
@@ -471,22 +472,29 @@ export class Session {
       if (!ok) {
         this.soundOn = false;
         this.syncToggles();
-      } else if (this.mode === 'run') {
-        this.sound.start();
+        this.opts.onNotice?.(`Le son n’a pas pu démarrer sur cet appareil (${this.sound.lastError || 'raison inconnue'}).`);
+      } else {
+        if (this.mode === 'run') this.sound.start();
+        const iphone = /iphone|ipad|ipod/i.test(navigator.userAgent);
+        this.opts.onNotice?.(iphone ? 'Son activé. Rien d’audible ? Vérifie l’interrupteur silencieux de l’iPhone.' : 'Son activé');
       }
     } else {
       this.sound.stop();
+      this.opts.onNotice?.('Son coupé');
     }
     this.opts.onPrefs({ sound: this.soundOn, haptics: this.hapticsOn });
   }
 
   syncToggles() {
-    const [snd, hap] = this.root.querySelectorAll('.s-toggles .icon-btn');
+    const snd = this.root.querySelector('[data-s="sound"]');
+    const hap = this.root.querySelector('[data-s="haptics"]');
     snd.classList.toggle('on', this.soundOn);
     snd.setAttribute('aria-pressed', String(this.soundOn));
     snd.innerHTML = this.soundOn ? icon.volume(22) : icon.volumeOff(22);
-    hap.classList.toggle('on', this.hapticsOn);
-    hap.setAttribute('aria-pressed', String(this.hapticsOn));
+    if (hap) {
+      hap.classList.toggle('on', this.hapticsOn);
+      hap.setAttribute('aria-pressed', String(this.hapticsOn));
+    }
   }
 
   pause() {
