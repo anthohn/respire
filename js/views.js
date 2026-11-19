@@ -336,6 +336,7 @@ export function settingsView(c) {
     ${toggle('sound', s.sound, 'Son doux', 'Une note qui accompagne ton souffle')}
     ${toggle('haptics', s.haptics, 'Vibrations', 'Une légère impulsion à chaque changement de phase')}
     ${ui.pipSupported ? toggle('pipAuto', s.pipAuto, 'Fenêtre flottante', 'Ouvre la session dans une petite fenêtre toujours visible : tu respires pendant que tu travailles') : ''}
+    ${ui.pipSupported && ui.linux ? '<p class="fine left">Sous GNOME (Wayland), le navigateur ne peut pas la garder au premier plan. L’extension « PiP on top » le fait, mais seulement quand Respire est ouverte dans un onglet du navigateur, pas dans l’application installée.</p>' : ''}
   </section>
 
   <section class="card list rise">

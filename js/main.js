@@ -13,6 +13,7 @@ const ui = {
   tab: 'home',
   cal: 0,
   pipSupported: pipSupported(),
+  linux: /linux/i.test(navigator.userAgent) && !/android/i.test(navigator.userAgent),
   canInstall: false,
   iosHint: /iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone,
   ob: { step: 0, name: '', goal: 5 },

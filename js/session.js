@@ -15,6 +15,8 @@ const RING_C = 2 * Math.PI * 48.5;
 /** Un trou plus long entre deux « tops » = ordinateur en veille ou onglet gelé : ce temps ne compte pas. */
 const SLEEP_GAP_MS = 3000;
 const chevron = `<span class="cta-ico">${icon.chevronRight(20)}</span>`;
+/** Titre standard d'une fenêtre flottante : c'est lui que reconnaissent les extensions qui la gardent au premier plan. */
+const PIP_TITLE = 'Picture-in-Picture';
 
 export class Session {
   /**
@@ -337,6 +339,7 @@ export class Session {
   }
 
   setTitle(text) {
+    if (this.pipWin) return; // pendant la fenêtre flottante, le titre de la page est réservé (voir enterPip)
     const full = `${text} — Respire`;
     if (this.shown.title === full) return;
     this.shown.title = full;
@@ -490,7 +493,7 @@ export class Session {
     this.ringBar.style.strokeDashoffset = '0';
     this.end();
     this.shown.title = '';
-    document.title = 'Session terminée — Respire';
+    if (!this.pipWin) document.title = 'Session terminée — Respire';
     if (this.soundOn && this.sound.ctx) this.sound.chime(523.25, 0.13);
     if (this.hapticsOn) vibrate([50, 90, 50]);
     this.opts.onFinish({ seconds: this.total, cycles: this.cycles, completed: true });
@@ -535,6 +538,8 @@ export class Session {
     pw.document.body.append(this.root);
     this.root.classList.add('pip');
     document.body.classList.remove('in-session');
+    // Le navigateur donne à la fenêtre flottante le titre de la page qui l'a ouverte.
+    document.title = PIP_TITLE;
     this.showAway();
 
     // L'animation suit la fenêtre flottante : celle de l'onglet est mise en veille quand il est caché.
@@ -565,6 +570,8 @@ export class Session {
     document.body.classList.add('in-session');
     this.away?.remove();
     this.away = null;
+    this.shown.title = '';
+    document.title = this.mode === 'done' ? 'Session terminée — Respire' : this.baseTitle;
 
     this.win = window;
     if (this.mode !== 'done') this.raf = window.requestAnimationFrame(this.loop);

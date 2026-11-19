@@ -21,7 +21,10 @@ export async function openPipWindow() {
   doc.documentElement.style.background = '#070b18';
   doc.documentElement.dataset.theme = document.documentElement.dataset.theme || 'auto';
   doc.documentElement.dataset.tod = document.documentElement.dataset.tod || 'day';
-  doc.title = 'Respire';
+  // Titre du document. Attention : le titre de la *fenêtre* vue par le système est repris par le navigateur
+  // depuis la page d'origine (voir enterPip dans session.js), et c'est le nom de l'application quand Respire
+  // est installée.
+  doc.title = 'Picture-in-Picture';
   doc.body.className = 'pip-body';
 
   const loads = [...document.querySelectorAll('link[rel="stylesheet"]')].map((src) => new Promise((resolve) => {
