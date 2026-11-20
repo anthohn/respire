@@ -23,7 +23,7 @@ const PIP_TITLE = 'Picture-in-Picture';
 export class Session {
   /**
    * @param {HTMLElement} root
-   * @param {{preset:object, minutes:number, sound:boolean, haptics:boolean, pipAuto?:boolean,
+   * @param {{preset:object, minutes:number, sound:boolean, haptics:boolean, pipAuto?:boolean, from?:{x:number,y:number,w:number},
    *          onFinish:(r:{seconds:number,cycles:number,completed:boolean})=>void,
    *          onPrefs:(p:{sound:boolean,haptics:boolean})=>void, onNotice?:(m:string)=>void, onExit:()=>void}} opts
    */
@@ -72,6 +72,7 @@ export class Session {
   // ---------- Cycle de vie ----------
 
   open() {
+    this.root._finish?.(); // une séance qui s'éteignait encore : on la termine tout de suite
     this.root.hidden = false;
     this.root.className = `session${this.desktop ? ' desktop' : ''}`;
     this.root.innerHTML = this.template();
@@ -119,6 +120,7 @@ export class Session {
 
     this.paint(0, 0);
     this.setHint(POSTURE[0]);
+    this.flyIn();
     requestAnimationFrame(() => this.root.classList.add('open'));
     this.inner.focus({ preventScroll: true });
 
@@ -136,7 +138,7 @@ export class Session {
     cancelAnimationFrame(this.raf);
     this.win.cancelAnimationFrame(this.raf);
     this.stopTicker();
-    this.aura?.destroy();
+    const aura = this.aura; // détruite après le fondu : la bulle reste visible pendant qu'on s'éloigne
     this.aura = null;
     this.away?.remove();
     this.root.removeEventListener('click', this.onClick);
@@ -150,9 +152,18 @@ export class Session {
     }
     document.title = this.baseTitle;
     document.body.classList.remove('in-session');
-    this.root.classList.remove('open');
-    this.root.hidden = true;
-    this.root.innerHTML = '';
+    this.root.classList.remove('open'); // la séance s'efface en fondu, l'accueil se prépare dessous
+    this.root.classList.add('leaving'); // les boutons et les textes partent les premiers
+    const root = this.root;
+    const finish = () => {
+      clearTimeout(timer);
+      root._finish = null;
+      aura?.destroy();
+      root.hidden = true;
+      root.innerHTML = '';
+    };
+    const timer = setTimeout(finish, 520);
+    root._finish = finish;
     this.opts.onExit();
   }
 
@@ -386,6 +397,21 @@ export class Session {
     });
   }
 
+  /** Sans WebGL : la bulle CSS part de la bulle de l'accueil et grandit vers sa place. */
+  flyIn() {
+    const from = this.opts.from;
+    const wrap = this.root.querySelector('.s-orb-wrap');
+    if (!from || !wrap || this.aura || !wrap.animate) return;
+    const r = wrap.getBoundingClientRect();
+    if (!r.width) return;
+    const dx = from.x - (r.left + r.width / 2);
+    const dy = from.y - (r.top + r.height / 2);
+    wrap.animate(
+      [{ transform: `translate(${dx}px, ${dy}px) scale(${from.w / r.width})` }, { transform: 'none' }],
+      { duration: 900, easing: 'cubic-bezier(0.22, 0.7, 0.2, 1)' },
+    );
+  }
+
   // ---------- Aura (WebGL) ----------
 
   setupAura() {
@@ -421,7 +447,11 @@ export class Session {
     const cr = canvas.getBoundingClientRect();
     const r = el.getBoundingClientRect();
     this.target = { cx: r.left - cr.left + r.width / 2, cy: r.top - cr.top + r.height / 2, W: r.width };
-    if (!this.cur) this.cur = { ...this.target };
+    if (!this.cur) {
+      // La bulle part de celle de l'accueil, puis glisse vers sa place (voir drawAura).
+      const from = this.opts.from;
+      this.cur = from ? { cx: from.x - cr.left, cy: from.y - cr.top, W: from.w } : { ...this.target };
+    }
   }
 
   drawAura() {

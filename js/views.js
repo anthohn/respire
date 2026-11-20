@@ -40,7 +40,7 @@ export function ring({ value, size = 92, stroke = 9, id = 'ring', inner = '' }) 
       </linearGradient></defs>
       <circle class="ring-track" cx="${half}" cy="${half}" r="${r}" stroke-width="${stroke}"/>
       <circle class="ring-bar" cx="${half}" cy="${half}" r="${r}" stroke-width="${stroke}" stroke="url(#${id})"
-        stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${(c * (1 - pct)).toFixed(2)}" transform="rotate(-90 ${half} ${half})"/>
+        stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${(c * (1 - pct)).toFixed(2)}" style="--c:${c.toFixed(2)}" transform="rotate(-90 ${half} ${half})"/>
     </svg>
     <div class="ring-inner">${inner}</div>
   </div>`;
@@ -138,7 +138,7 @@ export function homeView(c) {
   <section class="tiles rise">
     <article class="card tile tile-streak ${st.current > 0 ? 'is-lit' : ''}">
       <div class="tile-head"><span class="flame ${st.todayDone ? 'burning' : ''}">${icon.flame(30)}</span><span class="kicker">Série</span></div>
-      <div class="tile-value"><span class="num">${st.current}</span><span class="unit">${st.current >= 2 ? 'jours' : 'jour'}</span></div>
+      <div class="tile-value"><span class="num" data-count="${st.current}" data-count-key="home-streak">${st.current}</span><span class="unit">${st.current >= 2 ? 'jours' : 'jour'}</span></div>
       <p class="tile-sub">${st.current === 0 ? 'Lance ta série aujourd’hui' : next ? `Prochain palier : ${next} jours` : 'Palier maximal atteint'}</p>
       <div class="mini-bar" aria-hidden="true"><i style="width:${Math.round(milestonePct * 100)}%"></i></div>
     </article>
@@ -282,12 +282,12 @@ function seriesCard(series, week) {
   return `<section class="card series rise ${series.todayValid ? 'valid' : ''}" aria-label="Série du cercle">
     <p class="kicker">Série du cercle</p>
     <div class="series-top">
-      <p class="series-num"><span class="flame ${series.days > 0 ? 'lit' : ''} ${series.todayValid ? 'burning' : ''}">${icon.flame(30)}</span><span>${series.days}</span><small>${series.days > 1 ? 'jours' : 'jour'}</small></p>
+      <p class="series-num"><span class="flame ${series.days > 0 ? 'lit' : ''} ${series.todayValid ? 'burning' : ''}">${icon.flame(30)}</span><span data-count="${series.days}" data-count-key="series">${series.days}</span><small>${series.days > 1 ? 'jours' : 'jour'}</small></p>
     </div>
     <p class="series-line">${esc(line)}</p>
     <ol class="series-week">${week
       .map((d, i) => `<li class="wk ${d.valid ? 'valid' : ''} ${d.today ? 'today' : ''} ${d.future ? 'future' : ''}" ${d.valid ? 'aria-label="Jour validé"' : ''}>
-        <span class="wk-dot" style="--p:${d.fill.toFixed(3)}"><i class="ring"></i>${d.valid ? icon.check(15) : ''}</span>
+        <span class="wk-dot" style="--p:${d.fill.toFixed(3)};--k:${i}"><i class="ring"></i>${d.valid ? icon.check(15) : ''}</span>
         <span class="letter">${DAY_LETTERS[i]}</span></li>`)
       .join('')}</ol>
   </section>`;
@@ -463,7 +463,7 @@ export function progressView(c) {
   const mins = wk.map((k) => minutesOn(state.sessions, k));
   const maxMin = Math.max(goal * 1.4, ...mins, 1);
   const bars = wk.map((k, i) => `
-    <li class="bar-col ${k === today ? 'today' : ''}">
+    <li class="bar-col ${k === today ? 'today' : ''}" style="--k:${i}">
       <em>${mins[i] >= 1 ? Math.round(mins[i]) : ''}</em>
       <div class="bar-track"><i class="bar-fill ${mins[i] >= goal ? 'full' : ''}" style="height:${(mins[i] / maxMin) * 100}%"></i></div>
       <span>${DAY_LETTERS[i]}</span>
@@ -512,9 +512,9 @@ export function progressView(c) {
 
   <section class="stat-grid rise">
     <article class="card stat"><span class="stat-num">${formatDuration(stats.totalSeconds)}</span><span class="stat-label">de respiration</span></article>
-    <article class="card stat"><span class="stat-num">${stats.sessions}</span><span class="stat-label">${stats.sessions >= 2 ? 'sessions' : 'session'}</span></article>
-    <article class="card stat"><span class="stat-num">${stats.current}</span><span class="stat-label">${stats.current >= 2 ? 'jours' : 'jour'} de série</span></article>
-    <article class="card stat"><span class="stat-num">${stats.best}</span><span class="stat-label">${stats.best >= 2 ? 'jours' : 'jour'} · record</span></article>
+    <article class="card stat"><span class="stat-num" data-count="${stats.sessions}" data-count-key="stat-sessions">${stats.sessions}</span><span class="stat-label">${stats.sessions >= 2 ? 'sessions' : 'session'}</span></article>
+    <article class="card stat"><span class="stat-num" data-count="${stats.current}" data-count-key="stat-current">${stats.current}</span><span class="stat-label">${stats.current >= 2 ? 'jours' : 'jour'} de série</span></article>
+    <article class="card stat"><span class="stat-num" data-count="${stats.best}" data-count-key="stat-best">${stats.best}</span><span class="stat-label">${stats.best >= 2 ? 'jours' : 'jour'} · record</span></article>
   </section>
 
   <section class="card rise">

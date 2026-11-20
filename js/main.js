@@ -40,6 +40,7 @@ const sheetEl = $('#sheet');
 const sessionEl = $('#session');
 const obEl = $('#onboarding');
 const toastEl = $('#toast');
+const tabbarEl = $('.tabbar');
 const dialogEl = $('#dialog');
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -61,19 +62,83 @@ function context() {
 
 const views = { home: homeView, progress: progressView, circle: circleView, settings: settingsView };
 
-function render({ animate = true, keepScroll = false } = {}) {
-  const scroll = window.scrollY;
-  unmountHero();
-  applyMoment();
-  view.classList.toggle('no-anim', !animate);
-  view.innerHTML = views[ui.tab](context());
+const TABS = ['home', 'progress', 'circle', 'settings'];
+let tabTimer = 0;
+
+/** Barre du bas : l'onglet actif change tout de suite, la pastille glisse. */
+function syncTabBar() {
   document.querySelectorAll('.tab').forEach((tab) => {
     const on = tab.dataset.tab === ui.tab;
     tab.classList.toggle('on', on);
     tab.setAttribute('aria-current', on ? 'page' : 'false');
   });
+  tabbarEl.style.setProperty('--i', Math.max(0, TABS.indexOf(ui.tab)));
+}
+
+/** Change d'onglet : l'ancien écran s'efface en glissant, puis le nouveau arrive du même côté. */
+function goTab(next) {
+  const prev = ui.tab;
+  clearTimeout(tabTimer);
+  ui.tab = next;
+  syncTabBar();
+  if (next === prev || reduceMotion || session) {
+    render();
+    return;
+  }
+  const dir = TABS.indexOf(next) > TABS.indexOf(prev) ? 1 : -1;
+  view.style.setProperty('--out', `${-14 * dir}px`);
+  view.classList.add('leaving');
+  tabTimer = setTimeout(() => render({ dir }), 140);
+}
+
+function render({ animate = true, keepScroll = false, dir = 0 } = {}) {
+  clearTimeout(tabTimer);
+  view.classList.remove('leaving');
+  const scroll = window.scrollY;
+  unmountHero();
+  applyMoment();
+  view.classList.toggle('no-anim', !animate);
+  if (dir) view.style.setProperty('--dx', `${16 * dir}px`);
+  else view.style.removeProperty('--dx');
+  view.innerHTML = views[ui.tab](context());
+  syncTabBar();
   window.scrollTo(0, keepScroll ? scroll : 0);
   if (ui.tab === 'home') mountHero();
+  countNumbers(view, animate);
+}
+
+// Les chiffres comptent jusqu'à leur valeur : la première fois, ou quand ils ont changé depuis la dernière fois qu'on les a vus.
+const shownCounts = new Map();
+
+function countNumbers(root, animate) {
+  root.querySelectorAll('[data-count]').forEach((el) => {
+    const key = el.dataset.countKey;
+    const to = Number(el.dataset.count);
+    const known = shownCounts.has(key);
+    const from = known ? shownCounts.get(key) : 0;
+    shownCounts.set(key, to);
+    if (reduceMotion || from === to) return;
+    if (!animate && !known) return; // rafraîchissement discret d'un chiffre qu'on n'a pas encore vu : on l'affiche tel quel
+    el.textContent = from;
+    const start = performance.now() + 250;
+    const step = (now) => {
+      if (!el.isConnected) return;
+      const k = Math.min(1, Math.max(0, (now - start) / 800));
+      el.textContent = Math.round(from + (to - from) * (1 - (1 - k) ** 3));
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+/** Petite vibration (téléphones qui la permettent, et si les vibrations sont activées). */
+function buzz(ms = 10) {
+  if (!state.settings.haptics || !navigator.vibrate) return;
+  try {
+    navigator.vibrate(ms);
+  } catch {
+    /* tant pis */
+  }
 }
 
 // ---------- Aperçu du guidage sonore ----------
@@ -369,7 +434,7 @@ function restoreCircleCache() {
 
 /** Affiche l'état du cercle sans tout redessiner : sur l'accueil, seule la carte change (la bulle ne doit pas être recréée). */
 function rerenderCircle() {
-  if (session) return;
+  if (session || view.classList.contains('leaving')) return; // le changement d'onglet en cours affichera l'état à jour
   if (ui.tab === 'circle') {
     if (document.activeElement?.closest?.('.circle-form')) return; // on est en train de saisir : on ne touche à rien
     render({ animate: false, keepScroll: true });
@@ -466,11 +531,20 @@ function circleChanged() {
 
 // ---------- Session ----------
 
+/** Où est la bulle de l'accueil à l'écran : la bulle de la séance part de là et grandit vers sa place. */
+function heroOrigin() {
+  if (reduceMotion || ui.tab !== 'home' || state.settings.pipAuto) return null;
+  const r = view.querySelector('.hero-orb')?.getBoundingClientRect();
+  if (!r || !r.width || r.bottom < 0 || r.top > innerHeight) return null;
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width };
+}
+
 function startSession() {
   if (session) return;
   const preset = getPreset(state.settings.presetId);
   stopGuidePreview();
   session = new Session(sessionEl, {
+    from: heroOrigin(),
     preset,
     minutes: state.settings.minutes,
     sound: state.settings.sound,
@@ -703,8 +777,7 @@ async function runSync({ manual = false } = {}) {
 
 const actions = {
   tab(el) {
-    ui.tab = el.dataset.tab;
-    render();
+    goTab(el.dataset.tab);
     if (ui.tab === 'circle' && state.circle && Date.now() - ui.circle.at > 30000) refreshCircle({ silent: ui.circle.members.length > 0 });
   },
   start: () => startSession(),
@@ -1019,7 +1092,11 @@ const actions = {
         ui.circle.error = circleMessage(e);
       }
     }
+    buzz(12);
     rerenderCircle();
+    view
+      .querySelector(`[data-action="circle-sign"][data-mid="${mid}"][data-kind="${kind}"]`)
+      ?.classList.add('just-sent');
   },
   async 'circle-dismiss'() {
     const upTo = Math.max(0, ...ui.circle.events.map((e) => e.at));

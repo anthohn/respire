@@ -172,7 +172,9 @@ html[data-input='pointer'] :focus-visible { outline: none; }
 .view > .rise:nth-child(5) { animation-delay: 0.24s; }
 .view > .rise:nth-child(n + 6) { animation-delay: 0.3s; }
 .view.no-anim .rise { animation: none; }
-@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes rise { from { opacity: 0; transform: translate(var(--dx, 0px), 14px); } to { opacity: 1; transform: none; } }
+/* Changer d'onglet : l'ancien écran s'efface en glissant un peu, le nouveau arrive du même côté. */
+.view.leaving { opacity: 0; transform: translateX(var(--out, 0px)); pointer-events: none; transition: opacity 0.14s ease-in, transform 0.14s ease-in; }
 
 /* ---------- Barre d'onglets ---------- */
 
@@ -193,8 +195,23 @@ html[data-input='pointer'] :focus-visible { outline: none; }
   -webkit-backdrop-filter: blur(24px) saturate(1.5);
   backdrop-filter: blur(24px) saturate(1.5);
   z-index: 20;
+  transition: opacity 0.4s ease, transform 0.5s var(--ease), visibility 0s;
 }
-body.in-session .tabbar { display: none; }
+body.in-session .tabbar { opacity: 0; visibility: hidden; transform: translate(-50%, 26px); pointer-events: none; transition: opacity 0.3s ease, transform 0.45s var(--ease), visibility 0s 0.45s; }
+/* La pastille de l'onglet actif glisse d'un onglet à l'autre. */
+.tab-pill {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  bottom: 6px;
+  width: calc((100% - 18px) / 4);
+  border-radius: 22px;
+  background: var(--glass-hi);
+  box-shadow: 0 6px 18px -10px rgba(30, 40, 90, 0.35);
+  transform: translateX(calc(var(--i, 0) * (100% + 2px)));
+  transition: transform 0.5s var(--ease);
+  pointer-events: none;
+}
 .tab {
   display: flex;
   flex-direction: column;
@@ -206,9 +223,10 @@ body.in-session .tabbar { display: none; }
   font-size: 11.5px;
   font-weight: 800;
   letter-spacing: 0.02em;
-  transition: color 0.3s, background 0.3s;
+  position: relative;
+  transition: color 0.3s, transform 0.25s var(--ease);
 }
-.tab.on { color: var(--ink); background: var(--glass-hi); box-shadow: 0 6px 18px -10px rgba(30, 40, 90, 0.35); }
+.tab.on { color: var(--ink); }
 
 /* ---------- Titres, textes ---------- */
 
@@ -728,9 +746,11 @@ body.in-session .tabbar { display: none; }
   inset: 0;
   z-index: 60;
   opacity: 0;
-  transition: opacity 0.7s ease;
+  transition: opacity 0.5s ease;
 }
 .session.open { opacity: 1; }
+.session:not(.open) { pointer-events: none; }
+.session.leaving .s-inner { opacity: 0; transition: opacity 0.2s ease; }
 .s-bg {
   position: absolute;
   inset: 0;
@@ -1098,3 +1118,34 @@ body.in-session .tabbar { display: none; }
 .series-num .flame { color: var(--faint); }
 .series-num .flame.lit { color: var(--warm-2); }
 .series-num .flame.lit .flame-in { fill: #fff; }
+
+/* ---------- Mouvement : appuis, remplissages, arrivée en séance ---------- */
+
+/* Tout ce qui se touche s'enfonce un peu, puis revient en douceur. */
+.tab, .streak-pill, .session-chip, .cc-main, .link-btn, .seg button {
+  transition-property: color, background, border-color, transform;
+  transition-duration: 0.25s;
+  transition-timing-function: var(--ease);
+}
+.tab:active, .streak-pill:active, .session-chip:active, .cc-main:active, .link-btn:active, .seg button:active { transform: scale(0.95); }
+
+/* Les anneaux, les barres et les jours de la semaine se remplissent à l'arrivée (pas quand on ne fait que rafraîchir). */
+@property --p { syntax: '<number>'; inherits: true; initial-value: 0; }
+@keyframes wk-fill { from { --p: 0; } }
+@keyframes wk-pop { from { opacity: 0; transform: scale(0.4); } 60% { transform: scale(1.12); } }
+@keyframes ring-fill { from { stroke-dashoffset: var(--c); } }
+@keyframes grow-x { from { clip-path: inset(0 100% 0 0 round 99px); } to { clip-path: inset(0 0 0 0 round 99px); } }
+@keyframes grow-y { from { clip-path: inset(100% 0 0 0 round 12px); } to { clip-path: inset(0 0 0 0 round 12px); } }
+.view:not(.no-anim) .wk:not(.valid) .wk-dot { animation: wk-fill 0.9s calc(0.3s + var(--k, 0) * 0.07s) var(--ease) backwards; }
+.view:not(.no-anim) .wk.valid .wk-dot { animation: wk-pop 0.6s calc(0.3s + var(--k, 0) * 0.09s) var(--ease) backwards; }
+.view:not(.no-anim) .ring-bar { animation: ring-fill 1.1s 0.3s var(--ease) backwards; }
+.view:not(.no-anim) .mini-bar i, .view:not(.no-anim) .bar i { animation: grow-x 1s 0.3s var(--ease) backwards; }
+.view:not(.no-anim) .bar-fill { animation: grow-y 0.9s calc(0.25s + var(--k, 0) * 0.06s) var(--ease) backwards; }
+
+/* Le signe envoyé fait un petit rebond. */
+@keyframes sent-pop { 0% { transform: scale(0.9); } 55% { transform: scale(1.1); } 100% { transform: scale(1); } }
+.m-action.just-sent { animation: sent-pop 0.55s var(--ease); }
+
+/* En séance, le haut et le bas arrivent un peu après la bulle (la phrase du milieu a déjà son propre mouvement). */
+@keyframes s-in { from { opacity: 0; transform: translateY(8px); } }
+.session.open .s-top, .session.open .s-bottom { animation: s-in 0.9s 0.35s var(--ease) backwards; }
