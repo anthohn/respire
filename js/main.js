@@ -63,7 +63,6 @@ function context() {
 const views = { home: homeView, progress: progressView, circle: circleView, settings: settingsView };
 
 const TABS = ['home', 'progress', 'circle', 'settings'];
-let tabTimer = 0;
 
 /** Barre du bas : l'onglet actif change tout de suite, la pastille glisse. */
 function syncTabBar() {
@@ -75,31 +74,19 @@ function syncTabBar() {
   tabbarEl.style.setProperty('--i', Math.max(0, TABS.indexOf(ui.tab)));
 }
 
-/** Change d'onglet : l'ancien écran s'efface en glissant, puis le nouveau arrive du même côté. */
+/** Change d'onglet sans attendre : le nouvel écran arrive tout de suite, du côté où l'on va. */
 function goTab(next) {
-  const prev = ui.tab;
-  clearTimeout(tabTimer);
+  const dir = Math.sign(TABS.indexOf(next) - TABS.indexOf(ui.tab));
   ui.tab = next;
-  syncTabBar();
-  if (next === prev || reduceMotion || session) {
-    render();
-    return;
-  }
-  const dir = TABS.indexOf(next) > TABS.indexOf(prev) ? 1 : -1;
-  view.style.setProperty('--out', `${-14 * dir}px`);
-  view.classList.add('leaving');
-  tabTimer = setTimeout(() => render({ dir }), 140);
+  render({ dir });
 }
 
 function render({ animate = true, keepScroll = false, dir = 0 } = {}) {
-  clearTimeout(tabTimer);
-  view.classList.remove('leaving');
   const scroll = window.scrollY;
   unmountHero();
   applyMoment();
   view.classList.toggle('no-anim', !animate);
-  if (dir) view.style.setProperty('--dx', `${16 * dir}px`);
-  else view.style.removeProperty('--dx');
+  view.dataset.dir = dir; // sens du déplacement entre onglets (0 : aucun)
   view.innerHTML = views[ui.tab](context());
   syncTabBar();
   window.scrollTo(0, keepScroll ? scroll : 0);
@@ -188,53 +175,64 @@ async function previewGuide() {
 
 // ---------- Bulle de l'accueil ----------
 
-let hero = null;
+// La bulle WebGL est créée une seule fois puis replacée à chaque affichage de l'accueil :
+// recréer un contexte et recompiler le shader à chaque onglet bloquait justement les premières images du mouvement.
+let hero = null; // { canvas, aura, host, preset, t0, size, phase, raf }
 
 function unmountHero() {
-  if (!hero) return;
-  cancelAnimationFrame(hero.raf);
-  hero.aura.destroy();
-  hero = null;
+  if (hero) hero.host = null; // le canvas reste prêt, la boucle se met en veille
+}
+
+function startHero() {
+  const canvas = document.createElement('canvas');
+  canvas.className = 'hero-aura';
+  canvas.setAttribute('aria-hidden', 'true');
+  const aura = Aura.create(canvas, { full: false, pixelRatio: 1 });
+  if (!aura) return false;
+  const h = (hero = { canvas, aura, host: null, preset: null, t0: 0, size: '', phase: '', raf: 0 });
+  aura.onLost = () => {
+    // Contexte perdu (carte graphique réinitialisée) : on repart d'une bulle neuve au prochain affichage.
+    cancelAnimationFrame(h.raf);
+    h.host?.classList.remove('webgl');
+    h.canvas.remove();
+    if (hero === h) hero = null;
+  };
+  const loop = () => {
+    h.raf = requestAnimationFrame(loop);
+    const host = h.host;
+    if (!host || document.hidden || session || sheetEl.classList.contains('open')) return; // pas de calcul inutile quand on ne la voit pas
+    const w = canvas.clientWidth;
+    const hh = canvas.clientHeight;
+    if (!w || !hh) return;
+    if (`${w}x${hh}` !== h.size) {
+      h.size = `${w}x${hh}`;
+      aura.resize(w, hh, window.devicePixelRatio || 1);
+    }
+    const p = phaseAt(h.preset, (performance.now() - h.t0) / 1000);
+    if (p.phase !== h.phase) {
+      h.phase = p.phase;
+      if (h.phase === 'inhale') aura.pulse(1);
+      else if (h.phase === 'exhale') aura.pulse(-1);
+    }
+    aura.setBubble(w / 2, hh / 2, host.clientWidth * 0.5 * (0.52 + 0.4 * p.breath));
+    aura.draw(p.breath);
+  };
+  loop();
+  return true;
 }
 
 function mountHero() {
   const host = view.querySelector('.hero-orb');
   if (!host) return;
-  const canvas = document.createElement('canvas');
-  canvas.className = 'hero-aura';
-  canvas.setAttribute('aria-hidden', 'true');
-  host.append(canvas);
-  const aura = Aura.create(canvas, { full: false, pixelRatio: 1 });
-  if (!aura) {
-    canvas.remove();
-    return;
-  }
+  if (!hero && !startHero()) return; // pas de WebGL : l'orbe en CSS reste
+  hero.host = host;
+  hero.preset = getPreset(state.settings.presetId);
+  hero.t0 = performance.now();
+  hero.size = '';
+  hero.phase = '';
+  hero.aura.setPalette(readPalette()); // la couleur suit le moment de la journée et le thème
+  host.append(hero.canvas);
   host.classList.add('webgl');
-  const preset = getPreset(state.settings.presetId);
-  const t0 = performance.now();
-  let size = '';
-  let phase = '';
-  const state_ = (hero = { aura, raf: 0 });
-  const loop = () => {
-    state_.raf = requestAnimationFrame(loop);
-    if (document.hidden || session || sheetEl.classList.contains('open')) return; // pas de calcul inutile quand on ne la voit pas
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    if (!w || !h) return;
-    if (`${w}x${h}` !== size) {
-      size = `${w}x${h}`;
-      aura.resize(w, h, window.devicePixelRatio || 1);
-    }
-    const p = phaseAt(preset, (performance.now() - t0) / 1000);
-    if (p.phase !== phase) {
-      phase = p.phase;
-      if (phase === 'inhale') aura.pulse(1);
-      else if (phase === 'exhale') aura.pulse(-1);
-    }
-    aura.setBubble(w / 2, h / 2, host.clientWidth * 0.5 * (0.52 + 0.4 * p.breath));
-    aura.draw(p.breath);
-  };
-  loop();
 }
 
 function applyTheme() {
@@ -434,7 +432,7 @@ function restoreCircleCache() {
 
 /** Affiche l'état du cercle sans tout redessiner : sur l'accueil, seule la carte change (la bulle ne doit pas être recréée). */
 function rerenderCircle() {
-  if (session || view.classList.contains('leaving')) return; // le changement d'onglet en cours affichera l'état à jour
+  if (session) return;
   if (ui.tab === 'circle') {
     if (document.activeElement?.closest?.('.circle-form')) return; // on est en train de saisir : on ne touche à rien
     render({ animate: false, keepScroll: true });
