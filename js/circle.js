@@ -2,12 +2,12 @@
 //
 // - Un cercle se rejoint avec un code de 16 chiffres (ou le lien qui le contient), comme la synchronisation mais avec
 //   un autre sel : du code on dérive l'adresse du cercle sur le serveur et la clé qui chiffre tout ce qu'on y met.
-// - On n'y partage que le minimum : prénom, série, « a respiré aujourd'hui », la semaine en sept points.
-//   Jamais de durée, de ressenti, d'historique.
+// - On n'y partage que le minimum : prénom, série, et les jours où l'on a respiré (oui ou non) sur quatre semaines.
+//   Jamais de durée, de ressenti, de détail d'une séance.
 // - Le serveur ne voit que du texte chiffré et des identifiants aléatoires (voir api/circle.js).
 
 import { generateCode, normalizeCode, formatCode, deriveKeys, encryptPayload, decryptPayload } from './sync.js';
-import { buildStats, weekKeys, parseKey } from './stats.js';
+import { buildStats, weekKeys, parseKey, addDays, dayKey } from './stats.js';
 
 export { generateCode, normalizeCode, formatCode };
 
@@ -59,6 +59,7 @@ export const cleanName = (value) => String(value ?? '').replace(/[\u0000-\u001f\
 
 // ---------- Statut partagé ----------
 
+const WINDOW = 28; // nombre de jours de pratique partagés
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const daysBetween = (a, b) => Math.round((parseKey(a) - parseKey(b)) / 86400000);
 
@@ -76,6 +77,10 @@ export function buildStatus(state, today) {
     last, // dernier jour où l'on a respiré
     day: today, // jour de la publication
     week: weekKeys(today).map((k) => (active.has(k) ? '1' : '0')).join(''),
+    // Les 28 derniers jours, le plus récent en dernier : oui ou non, rien de plus. Sert à compter la série du cercle.
+    acts: Array.from({ length: WINDOW }, (_, i) => (active.has(addDays(today, i - (WINDOW - 1))) ? '1' : '0')).join(''),
+    // Le jour où l'on est entré dans le cercle : les jours d'avant ne comptent pas contre lui.
+    since: state.circle?.joinedAt ? dayKey(new Date(state.circle.joinedAt)) : today,
   };
 }
 
@@ -93,6 +98,8 @@ export function parseStatus(raw) {
     last: day(raw.last),
     day: day(raw.day),
     week: typeof raw.week === 'string' && /^[01]{7}$/.test(raw.week) ? raw.week : '0000000',
+    acts: typeof raw.acts === 'string' && /^[01]{28}$/.test(raw.acts) ? raw.acts : '', // absent chez ceux qui n'ont pas encore la dernière version
+    since: day(raw.since),
   };
 }
 
@@ -112,6 +119,7 @@ export function memberView(status, today) {
   return {
     name: status.name || 'Quelqu’un',
     state,
+    lastLabel: sinceLabel(status.last, today),
     streak: state === 'lapsed' || state === 'new' ? 0 : status.streak,
     best: status.best,
     // Les sept jours de la semaine en cours ; ceux d'une semaine passée ne disent plus rien.
@@ -122,6 +130,81 @@ export function memberView(status, today) {
 export function summarize(members, today) {
   const views = members.map((m) => memberView(m.status, today));
   return { total: views.length, done: views.filter((v) => v.state === 'done').length, views };
+}
+
+// ---------- Série du cercle ----------
+// Un jour est « validé » quand au moins la moitié du cercle a respiré (deux personnes au minimum : à deux, il faut
+// être les deux). La série du cercle compte les jours validés d'affilée. Plus indulgent que « tout le monde » : un
+// seul oubli ne casse pas tout, et ça reste vrai avec douze personnes.
+
+/** Combien de personnes faut-il pour valider un jour, dans un cercle de `n` présents ? */
+export const needed = (n) => Math.max(2, Math.ceil(n / 2));
+
+/**
+ * Cette personne a-t-elle respiré ce jour-là ? true / false, ou null si on ne sait pas
+ * (jour trop ancien pour les données partagées, ou dernière version pas encore installée).
+ */
+export function dayActive(status, key) {
+  if (key === status.last) return true;
+  const back = daysBetween(status.day, key); // 0 = jour de la publication
+  if (status.acts && back >= 0 && back < WINDOW) return status.acts[WINDOW - 1 - back] === '1';
+  if (back < 0) return false; // après sa dernière publication : elle n'a rien publié depuis, donc pas respiré
+  const week = weekKeys(status.day);
+  const i = week.indexOf(key);
+  return i >= 0 ? status.week[i] === '1' : null;
+}
+
+function dayInfo(members, key) {
+  const present = members.filter((m) => !m.status.since || m.status.since <= key); // ceux déjà dans le cercle ce jour-là
+  const done = present.filter((m) => dayActive(m.status, key) === true);
+  return { present, done, valid: present.length >= 2 && done.length >= needed(present.length) };
+}
+
+/** La série du cercle (null si on est seul) : jours validés d'affilée, état d'aujourd'hui, qui manque. */
+export function circleSeries(members, today) {
+  if (members.length < 2) return null;
+  const t = dayInfo(members, today);
+  let days = 0;
+  let key = t.valid ? today : addDays(today, -1); // tant qu'aujourd'hui n'est pas validé, il ne casse rien
+  while (days < WINDOW && dayInfo(members, key).valid) {
+    days += 1;
+    key = addDays(key, -1);
+  }
+  const need = needed(t.present.length);
+  return {
+    days,
+    todayValid: t.valid,
+    done: t.done.length,
+    total: t.present.length,
+    need,
+    remaining: Math.max(0, need - t.done.length),
+    missing: t.present.filter((m) => !t.done.includes(m)).map((m) => m.status.name || 'Quelqu’un'),
+  };
+}
+
+/** La semaine du cercle, jour par jour : combien ont respiré, et si le jour est validé. */
+export function weekOverview(members, today) {
+  return weekKeys(today).map((key) => {
+    const d = dayInfo(members, key);
+    const need = needed(Math.max(2, d.present.length));
+    return { key, today: key === today, future: key > today, valid: d.valid, fill: key > today ? 0 : Math.min(1, d.done.length / need) };
+  });
+}
+
+/** La phrase du moment : où en est la série, et ce qu'il reste à faire aujourd'hui. */
+export function seriesLine(series) {
+  if (!series) return '';
+  const days = series.days > 0 ? `Série du cercle : ${series.days} jour${series.days > 1 ? 's' : ''}` : '';
+  if (series.todayValid) return series.days > 1 ? `${days} ✨` : 'Jour validé ✨ La série du cercle démarre';
+  const todo = series.remaining === 1 && series.missing.length === 1 ? `il manque ${series.missing[0]}` : `encore ${series.remaining} pour valider aujourd’hui`;
+  return days ? `${days} · ${todo}` : `${todo.charAt(0).toUpperCase()}${todo.slice(1)} pour lancer la série du cercle`.replace(' pour valider aujourd’hui pour lancer', ' pour lancer');
+}
+
+/** « hier », « il y a 6 j » : depuis combien de temps cette personne n'a pas respiré. */
+export function sinceLabel(last, today) {
+  if (!last) return '';
+  const d = daysBetween(today, last);
+  return d <= 0 ? 'aujourd’hui' : d === 1 ? 'hier' : `il y a ${d} j`;
 }
 
 /** Ordre d'affichage : soi d'abord, puis par série décroissante, puis par prénom. */
