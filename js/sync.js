@@ -114,7 +114,7 @@ export function buildPayload(state) {
       presetId: state.settings.presetId,
       minutes: state.settings.minutes,
       // L'identité dans le cercle suit la synchronisation (chiffrée comme le reste) : même personne sur tous mes appareils.
-      circle: state.circle ? { code: state.circle.code, mid: state.circle.mid, key: state.circle.key, cn: state.circle.cn || '' } : null,
+      circle: state.circle ? { code: state.circle.code, mid: state.circle.mid, key: state.circle.key, cn: state.circle.cn || '', joinedAt: state.circle.joinedAt } : null,
     },
     prefsAt: state.prefsAt || 0,
     onboarded: !!state.onboarded,

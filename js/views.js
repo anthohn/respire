@@ -9,7 +9,7 @@ import { DAY_LETTERS, MONTHS, FEELINGS, greeting, moment } from './content.js';
 import { journeyLayout, STEPS } from './journey.js';
 import { GUIDE_STYLES } from './track.js';
 import { formatCode } from './sync.js';
-import { memberView, sortMembers, summarize, canSend, SIGNS, MAX_MEMBERS } from './circle.js';
+import { memberView, sortMembers, canSend, SIGNS, MAX_MEMBERS, circleSeries, weekOverview, missingText, todayLine, withMe } from './circle.js';
 
 export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
@@ -188,7 +188,7 @@ function eventBanners(events) {
     .join('')}<button class="icon-btn small" data-action="circle-dismiss" aria-label="Fermer">${icon.close(16)}</button></div>`;
 }
 
-/** La carte de l'accueil : qui, parmi les proches, a respiré aujourd'hui. */
+/** La carte de l'accueil : qui, parmi les proches, a respiré aujourd'hui, et où en est la série du cercle. */
 export function circleCardView(c) {
   const { state, ui, today } = c;
   const cs = ui.circle;
@@ -199,23 +199,23 @@ export function circleCardView(c) {
     return `<section class="card circle-card teaser rise">
       <button class="cc-main" data-action="tab" data-tab="circle">
         <span class="avatars" aria-hidden="true">${[260, 330, 190].map((h, i) => `<span class="avatar ${i < 2 ? 'done' : ''}" style="--h:${h}">${i < 2 ? `<i class="av-check">${icon.check(11)}</i>` : ''}</span>`).join('')}</span>
-        <span class="cc-text"><b>Respire avec tes proches</b><small>Voyez qui a respiré aujourd’hui, et encouragez-vous.</small></span>
+        <span class="cc-text"><b>Respire avec tes proches</b><small>Voyez qui a respiré aujourd’hui, et gardez une série ensemble.</small></span>
       </button>
       <button class="icon-btn small" data-action="circle-hint" aria-label="Fermer cette suggestion">${icon.close(16)}</button>
     </section>`;
   }
-  const members = sortMembers(cs.members, today);
-  const sum = summarize(members, today);
-  const others = members.filter((m) => !m.me);
-  const doneOthers = others.filter((m) => memberView(m.status, today).state === 'done').map((m) => m.status.name || 'Quelqu’un');
-  const title = !others.length
-    ? 'Invite tes proches'
-    : doneOthers.length
-      ? `${joinNames(doneOthers.slice(0, 3))}${doneOthers.length > 3 ? ` et ${doneOthers.length - 3} autre${doneOthers.length - 3 > 1 ? 's' : ''}` : ''} ${doneOthers.length > 1 ? 'ont' : 'a'} respiré aujourd’hui`
-      : 'Personne d’autre n’a encore respiré aujourd’hui';
-  const sub = !others.length ? 'Ton cercle est encore vide' : `${sum.done} sur ${sum.total} aujourd’hui${cs.error ? ' · hors ligne' : ''}`;
-  const faces = members.slice(0, 5).map((m) => avatar(m.mid, m.status.name, memberView(m.status, today).state === 'done')).join('');
-  return `${banners}<section class="card circle-card rise">
+  const members = sortMembers(withMe(state, cs.members, today), today);
+  const views = members.map((m) => ({ m, v: memberView(m.status, today) }));
+  const others = views.filter(({ m }) => !m.me);
+  const series = circleSeries(members, today);
+  // Deux lignes courtes : la série du cercle, puis ce qu'il reste à faire aujourd'hui.
+  const title = !others.length ? 'Invite tes proches' : series.days > 0 ? `Série du cercle : ${count(series.days, 'jour')}` : 'Série du cercle';
+  const todo = series && !series.todayValid ? missingText(series.missing) : '';
+  const sub = !others.length
+    ? 'Ton cercle est encore vide'
+    : `${series.todayValid ? 'Tout le monde a respiré ✨' : `${todo.charAt(0).toUpperCase()}${todo.slice(1)}`}${cs.error ? ' · hors ligne' : ''}`;
+  const faces = views.slice(0, 5).map(({ m, v }) => avatar(m.mid, v.name, v.state === 'done')).join('');
+  return `${banners}<section class="card circle-card rise ${series?.todayValid ? 'valid' : ''}">
     <button class="cc-main" data-action="tab" data-tab="circle">
       <span class="avatars" aria-hidden="true">${faces || avatar(state.circle.mid, state.name)}</span>
       <span class="cc-text"><b>${esc(title)}</b><small>${esc(sub)}</small></span>
@@ -223,14 +223,6 @@ export function circleCardView(c) {
     </button>
   </section>`;
 }
-
-const STATE_TEXT = {
-  done: ['A respiré aujourd’hui', 'Tu as respiré aujourd’hui'],
-  pending: ['Pas encore aujourd’hui', 'Pas encore aujourd’hui'],
-  risk: ['Sa série ne tient qu’à un fil', 'Ta série ne tient qu’à un fil'],
-  lapsed: ['Série interrompue', 'Série interrompue'],
-  new: ['Pas encore commencé', 'Pas encore commencé'],
-};
 
 /** Ce que l'on trouve derrière le code : le cercle et ses membres (ou la raison pour laquelle le code ne marche pas). */
 export function circlePreviewView(cs) {
@@ -245,27 +237,86 @@ export function circlePreviewView(cs) {
   </div>`;
 }
 
+const STATE_TEXT = {
+  done: ['A respiré aujourd’hui', 'Tu as respiré aujourd’hui'],
+  pending: ['Pas encore aujourd’hui', 'Pas encore aujourd’hui'],
+  risk: ['Sa série ne tient qu’à un fil', 'Ta série ne tient qu’à un fil'],
+  lapsed: ['Série interrompue', 'Série interrompue'],
+  new: ['Pas encore commencé', 'Pas encore commencé'],
+};
+
+/** Ce qui se lit sous le prénom : l'état du jour, et depuis quand pour ceux qui ont décroché. */
+function stateText(v, me) {
+  const base = STATE_TEXT[v.state][me ? 1 : 0];
+  return v.state === 'lapsed' && v.lastLabel ? `Dernière séance ${v.lastLabel}` : base;
+}
+
+/** Ce que l'on peut faire pour quelqu'un : un bravo s'il a respiré, un petit signe sinon (une fois par jour). */
+function memberAction(m, v, c) {
+  if (m.me) return '';
+  const kind = v.state === 'done' ? 'cheer' : 'nudge';
+  const sent = !canSend(c.state.circle, m.mid, kind, c.today);
+  return `<button class="btn small ghost m-action" data-action="circle-sign" data-mid="${m.mid}" data-kind="${kind}" ${sent ? 'disabled' : ''}>${sent ? '✓ Envoyé' : `${SIGNS[kind].emoji} ${SIGNS[kind].label}`}</button>`;
+}
+
 function memberRow(m, c) {
   const { state, today } = c;
   const v = memberView(m.status, today);
   const days = weekKeys(today);
-  const kind = v.state === 'done' ? 'cheer' : 'nudge';
-  const sent = !canSend(state.circle, m.mid, kind, today);
-  const action = m.me
-    ? ''
-    : `<button class="btn small ghost" data-action="circle-sign" data-mid="${m.mid}" data-kind="${kind}" ${sent ? 'disabled' : ''}>${sent ? '✓ Envoyé' : `${SIGNS[kind].emoji} ${SIGNS[kind].label}`}</button>`;
+  const n = v.week.filter(Boolean).length;
   return `<li class="member card state-${v.state} ${m.me ? 'me' : ''}">
     ${avatar(m.mid, v.name, v.state === 'done')}
     <div class="m-main">
       <p class="m-name"><b>${esc(m.me ? state.name || v.name : v.name)}</b>${m.me ? '<em class="tag-me">Toi</em>' : ''}</p>
-      <p class="m-state">${STATE_TEXT[v.state][m.me ? 1 : 0]}</p>
-      <span class="m-week" role="img" aria-label="Cette semaine : ${v.week.filter(Boolean).length} jour${v.week.filter(Boolean).length > 1 ? 's' : ''} sur 7">${v.week.map((on, i) => `<i class="${on ? 'on' : ''} ${days[i] === today ? 'today' : ''}"></i>`).join('')}</span>
+      <p class="m-state">${esc(stateText(v, m.me))}</p>
+      <span class="m-week" role="img" aria-label="Cette semaine : ${n} jour${n > 1 ? 's' : ''} sur 7">${v.week.map((on, i) => `<i class="${on ? 'on' : ''} ${days[i] === today ? 'today' : ''}"></i>`).join('')}</span>
+      ${memberAction(m, v, c)}
     </div>
-    <div class="m-side">
-      <span class="m-streak ${v.streak > 0 ? 'lit' : ''}" aria-label="Série : ${count(v.streak, 'jour')}">${icon.flame(18)}<b>${v.streak}</b></span>
-      ${action}
-    </div>
+    <span class="m-streak ${v.streak > 0 ? 'lit' : ''}" aria-label="Série : ${count(v.streak, 'jour')}">${icon.flame(18)}<b>${v.streak}</b></span>
   </li>`;
+}
+
+/** La série du cercle : le compteur, ce qu'il reste à faire aujourd'hui, et la semaine en sept anneaux. */
+function seriesCard(series, week) {
+  const line = todayLine(series);
+  return `<section class="card series rise ${series.todayValid ? 'valid' : ''}" aria-label="Série du cercle">
+    <p class="kicker">Série du cercle</p>
+    <div class="series-top">
+      <p class="series-num"><span class="flame ${series.days > 0 ? 'lit' : ''} ${series.todayValid ? 'burning' : ''}">${icon.flame(30)}</span><span>${series.days}</span><small>${series.days > 1 ? 'jours' : 'jour'}</small></p>
+    </div>
+    <p class="series-line">${esc(line)}</p>
+    <ol class="series-week">${week
+      .map((d, i) => `<li class="wk ${d.valid ? 'valid' : ''} ${d.today ? 'today' : ''} ${d.future ? 'future' : ''}" ${d.valid ? 'aria-label="Jour validé"' : ''}>
+        <span class="wk-dot" style="--p:${d.fill.toFixed(3)}"><i class="ring"></i>${d.valid ? icon.check(15) : ''}</span>
+        <span class="letter">${DAY_LETTERS[i]}</span></li>`)
+      .join('')}</ol>
+  </section>`;
+}
+
+/** L'invitation : une ligne discrète quand le cercle existe, un appel plus franc quand on est seul. */
+function inviteBlock(cs, circle, alone) {
+  const code = cs.showCode
+    ? `<div class="code-box"><span class="code" aria-label="Code du cercle">${esc(formatCode(circle.code))}</span><p class="fine">Quelqu’un qui a ce code peut rejoindre le cercle et lire les statuts. Ne le partage qu’avec tes proches.</p></div>`
+    : '';
+  if (alone) {
+    return `<section class="card invite first rise">
+      <p class="list-title">Invite tes proches</p>
+      <p class="muted">Ton cercle est encore vide. Envoie-leur le lien : il suffit de le toucher pour rejoindre.</p>
+      <button class="cta" data-action="circle-share">Inviter par lien</button>
+      <div class="invite-links">
+        <button class="link-btn" data-action="circle-copy">${cs.copied ? '✓ Lien copié' : 'Copier le lien'}</button>
+        <button class="link-btn" data-action="circle-show-code">${cs.showCode ? 'Masquer le code' : 'Afficher le code'}</button>
+      </div>
+      ${code}
+    </section>`;
+  }
+  return `<section class="invite-row rise">
+      <button class="ir-main" data-action="circle-share">
+        <span class="ir-plus" aria-hidden="true">${icon.plus(20)}</span>
+        <span class="ir-text"><b>Inviter un proche</b><small>Un lien, et il rejoint en un geste</small></span>
+      </button>
+      <button class="icon-btn" data-action="circle-copy" aria-label="Copier le lien">${cs.copied ? icon.check(20) : icon.copy(20)}</button>
+    </section>${code}`;
 }
 
 export function circleView(c) {
@@ -316,47 +367,43 @@ export function circleView(c) {
     <section class="card circle-hero rise">
       <span class="avatars big" aria-hidden="true">${[260, 330, 190].map((h, i) => `<span class="avatar ${i < 2 ? 'done' : ''}" style="--h:${h}">${i < 2 ? `<i class="av-check">${icon.check(13)}</i>` : ''}</span>`).join('')}</span>
       <h2>Respirez ensemble</h2>
-      <p class="lede">Retrouve tes proches dans un petit cercle : chacun voit qui a respiré aujourd’hui, et vous vous encouragez.</p>
+      <p class="lede">Gardez une série à plusieurs : chaque jour où tout le monde respire, le cercle avance.</p>
       <button class="cta" data-action="circle-form" data-form="create">Créer mon cercle</button>
       <button class="btn wide" data-action="circle-form" data-form="join">J’ai une invitation</button>
     </section>
     <section class="card list rise">
       <p class="list-title">Ce qui est partagé</p>
-      <p class="circle-note"><b>Seulement :</b> ton prénom, ta série et les jours de la semaine où tu as respiré. Jamais tes durées, tes ressentis ni ton historique.</p>
+      <p class="circle-note"><b>Seulement :</b> ton prénom, ta série et les jours où tu as respiré (oui ou non, sur quatre semaines). Jamais tes durées, tes ressentis ni le détail de tes séances.</p>
       <p class="circle-note">Tout est chiffré avec le code du cercle : le serveur ne peut rien lire. Pas de compte, pas d’e-mail. Tu peux quitter quand tu veux.</p>
     </section>`;
   }
 
   // ----- Dans un cercle -----
-  const members = sortMembers(cs.members, today);
-  const sum = summarize(members, today);
-  const others = members.length - members.filter((m) => m.me).length;
+  const members = sortMembers(withMe(state, cs.members, today), today);
+  const series = circleSeries(members, today);
+  const done = members.filter((m) => memberView(m.status, today).state === 'done').length;
+  const others = members.filter((m) => !m.me).length;
   const title = circle.cn || members.map((m) => m.status.cn).find(Boolean) || 'Ton cercle';
   const sub = !members.length
     ? cs.loading ? 'Chargement…' : cs.error ? 'Hors ligne' : ''
-    : `${count(sum.total, 'personne')} · ${sum.done} ${sum.done > 1 ? 'ont' : 'a'} respiré aujourd’hui`;
+    : `${count(members.length, 'personne')} · ${done} ${done > 1 ? 'ont' : 'a'} respiré aujourd’hui`;
   const updated = cs.at ? `Mis à jour ${ago(cs.at)}` : '';
   return `${head}
     <section class="circle-top rise">
       <div><h2>${esc(title)}</h2><p class="muted">${esc(sub)}</p></div>
       <button class="icon-btn ${cs.loading ? 'spin' : ''}" data-action="circle-refresh" aria-label="Actualiser" ${cs.loading ? 'disabled' : ''}>${icon.refresh(20)}</button>
     </section>
+    ${series ? seriesCard(series, weekOverview(members, today)) : ''}
     ${eventBanners(cs.events)}
     ${err(cs.error)}
     ${members.length ? `<ul class="member-list rise">${members.map((m) => memberRow(m, c)).join('')}</ul>` : cs.loading ? '<p class="muted center rise">Chargement du cercle…</p>' : ''}
-
-    <section class="card invite rise ${others ? '' : 'first'}">
-      <p class="list-title">${others ? 'Inviter un proche' : 'Invite tes proches'}</p>
-      <p class="muted">${others ? 'Envoie le lien du cercle : il suffit de le toucher pour rejoindre.' : 'Ton cercle est encore vide. Envoie-leur le lien : il suffit de le toucher pour rejoindre.'}</p>
-      <button class="btn wide accent" data-action="circle-share">Inviter par lien</button>
-      <button class="btn wide ghost" data-action="circle-copy">${cs.copied ? '✓ Lien copié' : 'Copier le lien'}</button>
-      <button class="link-btn" data-action="circle-show-code">${cs.showCode ? 'Masquer le code' : 'Afficher le code'}</button>
-      ${cs.showCode ? `<div class="code-box"><span class="code" aria-label="Code du cercle">${esc(formatCode(circle.code))}</span><p class="fine">Quelqu’un qui a ce code peut rejoindre le cercle et lire les statuts. Ne le partage qu’avec tes proches.</p></div>` : ''}
-    </section>
-
+    ${inviteBlock(cs, circle, !others)}
     <div class="circle-foot rise">
       ${updated ? `<p class="fine center">${esc(updated)}</p>` : ''}
-      <button class="link-btn danger" data-action="circle-leave">Quitter le cercle</button>
+      <div class="foot-links">
+        ${others ? `<button class="link-btn" data-action="circle-show-code">${cs.showCode ? 'Masquer le code' : 'Afficher le code'}</button>` : ''}
+        <button class="link-btn danger" data-action="circle-leave">Quitter le cercle</button>
+      </div>
     </div>`;
 }
 
@@ -704,6 +751,8 @@ export function doneView(d) {
       <div><span class="num" data-from="${d.streakBefore}" data-to="${d.streakAfter}">${d.streakAfter}</span>
       <span class="unit">${d.streakAfter >= 2 ? 'jours de suite' : 'jour de suite'}</span></div>
     </div>
+
+    ${d.circleLine ? `<p class="done-circle ${d.circleLine.valid ? 'valid' : ''}">${esc(d.circleLine.text)}</p>` : ''}
 
     <div class="done-goal">
       ${ring({ value: d.minutesToday / d.goal, id: 'ringDone', size: 54, stroke: 6, inner: d.minutesToday >= d.goal ? icon.check(20) : '' })}

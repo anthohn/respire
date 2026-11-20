@@ -12,7 +12,7 @@ import { pipSupported } from './pip.js';
 import { Aura, readPalette } from './aura.js';
 import {
   createCircle, joinCircle, publish as publishCircle, fetchCircle, sendSign, ackEvents, leaveCircle, parseInvite, inviteLink,
-  parseStatus, peekCircle, CircleError, CIRCLE_MESSAGES, formatCode as formatCircleCode, normalizeCode as normalizeCircleCode,
+  parseStatus, peekCircle, circleSeries, seriesLine, withMe, CircleError, CIRCLE_MESSAGES, formatCode as formatCircleCode, normalizeCode as normalizeCircleCode,
 } from './circle.js';
 import { syncNow, enableSync, joinWithCode, deleteRemote, normalizeCode, formatCode, SyncError, SYNC_MESSAGES } from './sync.js';
 
@@ -499,6 +499,9 @@ function handleFinish({ seconds, cycles, completed }) {
   const levelBefore = levelInfo(before.totalMinutes);
   const badgesBefore = new Set(earnedBadgeIds(before));
 
+  // Où en est la série du cercle, avant et après cette séance (avec ce que l'on sait des autres).
+  const circleBefore = state.circle && ui.circle.members.length >= 2 ? circleSeries(withMe(state, ui.circle.members, today), today) : null;
+
   const record = {
     id: Date.now().toString(36),
     ts: new Date().toISOString(),
@@ -522,7 +525,18 @@ function handleFinish({ seconds, cycles, completed }) {
   save(state);
   scheduleSync(1500);
 
+  const circleAfter = circleBefore ? circleSeries(withMe(state, ui.circle.members, today), today) : null;
+  const circleLine = circleAfter
+    ? {
+        valid: circleAfter.todayValid,
+        text: !circleBefore.todayValid && circleAfter.todayValid
+          ? `Jour du cercle validé ✨${circleAfter.days > 1 ? ` · série : ${circleAfter.days} jours` : ''}`
+          : seriesLine(circleAfter),
+      }
+    : null;
+
   const data = {
+    circleLine,
     seconds,
     cycles,
     completed,

@@ -47,7 +47,10 @@ test('statut partagé : le strict minimum, rien d’autre', () => {
   const state = phone('Léa', [0, -1, -2], { circle: { cn: 'Famille' } });
   state.sessions[0].feeling = 'calm'; // ne doit jamais partir
   const s = buildStatus(state, TODAY);
-  assert.deepEqual(Object.keys(s).sort(), ['best', 'cn', 'day', 'last', 'name', 'streak', 'v', 'week']);
+  assert.deepEqual(Object.keys(s).sort(), ['acts', 'best', 'cn', 'day', 'last', 'name', 'since', 'streak', 'v', 'week']);
+  assert.match(s.acts, /^[01]{28}$/, 'quatre semaines, oui ou non par jour');
+  assert.equal(s.acts.slice(-3), '111');
+  assert.equal(s.acts.slice(-5), '00111');
   assert.equal(s.name, 'Léa');
   assert.equal(s.cn, 'Famille');
   assert.equal(s.streak, 3);
@@ -189,7 +192,7 @@ import { buildPayload, applyPayload, mergePayloads } from '../js/sync.js';
 import { sanitizeCircle } from '../js/store.js';
 
 test('synchronisation : l’identité du cercle suit mes appareils, pas ce qui est propre à chacun', () => {
-  const identity = { code: '1234567890123456', mid: 'a'.repeat(16), key: 'b'.repeat(64), cn: 'La famille' };
+  const identity = { code: '1234567890123456', mid: 'a'.repeat(16), key: 'b'.repeat(64), cn: 'La famille', joinedAt: 1763500000000 };
   const a = phone('Léa', [0], { prefsAt: 100, settings: { goalMin: 5, presetId: 'long', minutes: 5 }, circle: { ...identity, sent: { 'x:nudge': TODAY }, cache: { at: 1, members: [] }, published: { text: 't', at: 1 } } });
   const p = buildPayload(a);
   assert.deepEqual(p.prefs.circle, identity, 'seule l’identité voyage, pas le cache ni les signes envoyés');
@@ -234,4 +237,81 @@ test('invitation : on voit le cercle et ses membres avant de le rejoindre, sans 
   assert.equal((await fetchCircle(lea)).members.length, 2, 'regarder n’inscrit personne');
   await assert.rejects(() => peekCircle('0000000000000000'), (e) => e.code === 'unknown');
   await assert.rejects(() => peekCircle('12'), (e) => e.code === 'invalid');
+});
+
+import { circleSeries, weekOverview, missingText, seriesLine, sinceLabel, dayActive } from '../js/circle.js';
+
+// Un cercle de test : chacun avec ses jours de pratique (décalages par rapport à aujourd'hui) et sa date d'arrivée.
+const person = (name, offs, { since = -30, me = false } = {}) => ({
+  mid: name, me,
+  status: parseStatus(buildStatus({ name, sessions: offs.map((o) => sess(o)), circle: { joinedAt: Date.parse(`${addDays(TODAY, since)}T12:00:00`) } }, TODAY)),
+});
+
+test('série du cercle : un jour compte quand tout le monde a respiré, la série compte les jours d’affilée', () => {
+  const both = (...offs) => [person('Léa', offs, { me: true }), person('Paul', offs)];
+  const s = circleSeries(both(0, -1, -2), TODAY);
+  assert.equal(s.days, 3);
+  assert.equal(s.todayValid, true);
+  assert.deepEqual([s.done, s.total, s.missing.length], [2, 2, 0]);
+  // Un seul manque à l'appel aujourd'hui : la série tient, mais aujourd'hui n'est pas validé
+  const one = circleSeries([person('Léa', [0, -1, -2], { me: true }), person('Paul', [-1, -2])], TODAY);
+  assert.equal(one.days, 2, 'aujourd’hui n’est pas encore perdu : on compte depuis hier');
+  assert.equal(one.todayValid, false);
+  assert.deepEqual(one.missing, [{ name: 'Paul', me: false }]);
+  // Un jour manqué par l'un d'eux casse la série là
+  const gap = circleSeries([person('Léa', [0, -1, -2, -3], { me: true }), person('Paul', [0, -1, -3])], TODAY);
+  assert.equal(gap.days, 2);
+  assert.equal(circleSeries([person('Léa', [0], { me: true })], TODAY), null, 'seul : pas de série du cercle');
+  // Au plus quatre semaines
+  const long = Array.from({ length: 40 }, (_, i) => -i);
+  assert.equal(circleSeries(both(...long), TODAY).days, 28);
+});
+
+test('série du cercle : quelqu’un qui arrive ne compte pas contre les jours d’avant son arrivée', () => {
+  const lea = person('Léa', [0, -1, -2, -3], { me: true, since: -10 });
+  const nouveau = person('Nina', [0, -1], { since: -1 }); // arrivée hier
+  const s = circleSeries([lea, nouveau], TODAY);
+  assert.equal(s.days, 2, 'hier et aujourd’hui, à deux ; avant, Nina n’était pas là (et Léa seule ne fait pas un jour du cercle)');
+  assert.equal(s.total, 2);
+});
+
+test('série du cercle : une version plus ancienne (sans les 28 jours) ne fausse rien', () => {
+  const old = { mid: 'Vieux', me: false, status: parseStatus({ name: 'Vieux', streak: 5, last: TODAY, day: TODAY, week: '0111000' }) }; // jeudi, mercredi, mardi
+  assert.equal(dayActive(old.status, TODAY), true);
+  assert.equal(dayActive(old.status, addDays(TODAY, -1)), true);
+  assert.equal(dayActive(old.status, addDays(TODAY, -3)), false, 'lundi : le point de la semaine dit non');
+  assert.equal(dayActive(old.status, addDays(TODAY, -10)), null, 'avant la semaine : on ne sait pas');
+  const s = circleSeries([person('Léa', [0, -1, -2, -3, -4, -5], { me: true }), old], TODAY);
+  assert.equal(s.days, 3, 'on s’arrête là où l’on ne sait plus (mardi, mercredi, jeudi)');
+});
+
+test('semaine du cercle : la part qui a respiré chaque jour, validé quand tous', () => {
+  const week = weekOverview([person('Léa', [0, -1, -2], { me: true }), person('Paul', [0, -2])], TODAY);
+  assert.equal(week.length, 7);
+  const byKey = Object.fromEntries(week.map((d) => [d.key, d]));
+  assert.deepEqual([byKey[TODAY].valid, byKey[TODAY].fill, byKey[TODAY].today], [true, 1, true]);
+  assert.deepEqual([byKey[addDays(TODAY, -1)].valid, byKey[addDays(TODAY, -1)].fill], [false, 0.5], 'un sur deux hier');
+  assert.deepEqual([byKey[addDays(TODAY, -2)].valid, byKey[addDays(TODAY, -2)].fill], [true, 1]);
+  assert.ok(byKey[addDays(TODAY, 1)].future);
+  assert.equal(byKey[addDays(TODAY, 1)].fill, 0);
+});
+
+test('phrases : qui manque, en parlant à la personne concernée', () => {
+  assert.equal(missingText([{ name: 'Dorina', me: false }]), 'il manque Dorina');
+  assert.equal(missingText([{ name: 'Anthony', me: true }]), 'il ne manque que toi');
+  assert.equal(missingText([{ name: 'Dorina', me: false }, { name: 'Anthony', me: true }]), 'il manque Dorina et toi');
+  assert.equal(missingText([{ name: 'A', me: false }, { name: 'B', me: false }, { name: 'C', me: false }]), 'il manque 3 personnes');
+  const base = { days: 3, todayValid: false, done: 1, total: 2, missing: [{ name: 'Dorina', me: false }] };
+  assert.equal(seriesLine(base), 'Série du cercle : 3 jours · il manque Dorina');
+  assert.equal(seriesLine({ ...base, todayValid: true, missing: [] }), 'Série du cercle : 3 jours ✨');
+  assert.equal(seriesLine({ ...base, days: 0 }), 'Il manque Dorina pour lancer la série du cercle');
+  assert.equal(seriesLine({ ...base, days: 1, todayValid: true, missing: [] }), 'Jour validé ✨ La série du cercle démarre');
+  assert.equal(seriesLine(null), '');
+});
+
+test('dernière séance : hier, il y a 6 j', () => {
+  assert.equal(sinceLabel(TODAY, TODAY), 'aujourd’hui');
+  assert.equal(sinceLabel(addDays(TODAY, -1), TODAY), 'hier');
+  assert.equal(sinceLabel(addDays(TODAY, -6), TODAY), 'il y a 6 j');
+  assert.equal(sinceLabel('', TODAY), '');
 });

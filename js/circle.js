@@ -133,12 +133,8 @@ export function summarize(members, today) {
 }
 
 // ---------- Série du cercle ----------
-// Un jour est « validé » quand au moins la moitié du cercle a respiré (deux personnes au minimum : à deux, il faut
-// être les deux). La série du cercle compte les jours validés d'affilée. Plus indulgent que « tout le monde » : un
-// seul oubli ne casse pas tout, et ça reste vrai avec douze personnes.
-
-/** Combien de personnes faut-il pour valider un jour, dans un cercle de `n` présents ? */
-export const needed = (n) => Math.max(2, Math.ceil(n / 2));
+// Un jour est « validé » quand tout le monde a respiré (à deux personnes au moins). La série du cercle compte les
+// jours validés d'affilée. Quelqu'un qui arrive dans le cercle ne compte pas contre les jours d'avant son arrivée.
 
 /**
  * Cette personne a-t-elle respiré ce jour-là ? true / false, ou null si on ne sait pas
@@ -157,7 +153,7 @@ export function dayActive(status, key) {
 function dayInfo(members, key) {
   const present = members.filter((m) => !m.status.since || m.status.since <= key); // ceux déjà dans le cercle ce jour-là
   const done = present.filter((m) => dayActive(m.status, key) === true);
-  return { present, done, valid: present.length >= 2 && done.length >= needed(present.length) };
+  return { present, done, valid: present.length >= 2 && done.length === present.length };
 }
 
 /** La série du cercle (null si on est seul) : jours validés d'affilée, état d'aujourd'hui, qui manque. */
@@ -170,25 +166,29 @@ export function circleSeries(members, today) {
     days += 1;
     key = addDays(key, -1);
   }
-  const need = needed(t.present.length);
   return {
     days,
     todayValid: t.valid,
     done: t.done.length,
     total: t.present.length,
-    need,
-    remaining: Math.max(0, need - t.done.length),
-    missing: t.present.filter((m) => !t.done.includes(m)).map((m) => m.status.name || 'Quelqu’un'),
+    missing: t.present.filter((m) => !t.done.includes(m)).map((m) => ({ name: m.status.name || 'Quelqu’un', me: !!m.me })),
   };
 }
 
-/** La semaine du cercle, jour par jour : combien ont respiré, et si le jour est validé. */
+/** La semaine du cercle, jour par jour : la part du cercle qui a respiré, et si le jour est validé. */
 export function weekOverview(members, today) {
   return weekKeys(today).map((key) => {
     const d = dayInfo(members, key);
-    const need = needed(Math.max(2, d.present.length));
-    return { key, today: key === today, future: key > today, valid: d.valid, fill: key > today ? 0 : Math.min(1, d.done.length / need) };
+    return { key, today: key === today, future: key > today, valid: d.valid, fill: key > today || !d.present.length ? 0 : d.done.length / d.present.length };
   });
+}
+
+/** « il manque Dorina », « il ne manque que toi », « il manque Dorina et toi », « il manque 3 personnes ». */
+export function missingText(missing) {
+  const names = missing.map((m) => (m.me ? 'toi' : m.name));
+  if (names.length === 1) return names[0] === 'toi' ? 'il ne manque que toi' : `il manque ${names[0]}`;
+  if (names.length === 2) return `il manque ${names[0]} et ${names[1]}`;
+  return `il manque ${names.length} personnes`;
 }
 
 /** La phrase du moment : où en est la série, et ce qu'il reste à faire aujourd'hui. */
@@ -196,8 +196,25 @@ export function seriesLine(series) {
   if (!series) return '';
   const days = series.days > 0 ? `Série du cercle : ${series.days} jour${series.days > 1 ? 's' : ''}` : '';
   if (series.todayValid) return series.days > 1 ? `${days} ✨` : 'Jour validé ✨ La série du cercle démarre';
-  const todo = series.remaining === 1 && series.missing.length === 1 ? `il manque ${series.missing[0]}` : `encore ${series.remaining} pour valider aujourd’hui`;
-  return days ? `${days} · ${todo}` : `${todo.charAt(0).toUpperCase()}${todo.slice(1)} pour lancer la série du cercle`.replace(' pour valider aujourd’hui pour lancer', ' pour lancer');
+  const todo = missingText(series.missing);
+  return days ? `${days} · ${todo}` : `${todo.charAt(0).toUpperCase()}${todo.slice(1)} pour lancer la série du cercle`;
+}
+
+/**
+ * La liste des membres avec mon statut à jour : je sais ce que je viens de faire avant que le serveur le sache,
+ * donc la série et les points se mettent à jour tout de suite, même sans réseau.
+ */
+export function withMe(state, members, today) {
+  if (!state.circle) return members;
+  const me = parseStatus(buildStatus(state, today));
+  return members.map((m) => (m.me ? { ...m, status: me } : m));
+}
+
+/** Sous le compteur du cercle : ce qui reste à faire aujourd'hui. */
+export function todayLine(series) {
+  if (series.todayValid) return 'Tout le monde a respiré aujourd’hui ✨';
+  const t = missingText(series.missing);
+  return `${t.charAt(0).toUpperCase()}${t.slice(1)} pour ${series.days > 0 ? 'garder' : 'lancer'} la série`;
 }
 
 /** « hier », « il y a 6 j » : depuis combien de temps cette personne n'a pas respiré. */
