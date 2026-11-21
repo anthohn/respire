@@ -643,7 +643,11 @@ export function settingsView(c) {
       <button class="btn wide ghost" data-action="preview-sound">${icon.volume(18)} Écouter un aperçu</button>
     </div>
     <p class="fine left">Le volume se règle avec les boutons de ton téléphone. En voiture, lance la séance à l’arrêt et évite les rythmes avec une pause (4-7-8, Calme profond) : ils détendent beaucoup.</p>` : ''}
-    ${toggle('haptics', s.haptics, 'Vibrations', 'Une légère impulsion à chaque changement de phase')}
+    ${ui.canVibrate
+      ? toggle('haptics', s.haptics, 'Vibrations', 'Une légère impulsion à chaque changement de phase')
+      : ui.touch
+        ? '<div class="row"><span class="row-text"><b>Vibrations</b><small>Indisponibles ici : l’iPhone ne les permet pas aux applications web. Le son suffit à guider ton souffle.</small></span></div>'
+        : ''}
     ${ui.pipSupported ? toggle('pipAuto', s.pipAuto, 'Fenêtre flottante', 'Ouvre la session dans une petite fenêtre toujours visible : tu respires pendant que tu travailles') : ''}
     ${ui.pipSupported && ui.linux ? '<p class="fine left">Sous GNOME (Wayland), le navigateur ne peut pas la garder au premier plan. L’extension « PiP on top » le fait, mais seulement quand Respire est ouverte dans un onglet du navigateur, pas dans l’application installée.</p>' : ''}
   </section>

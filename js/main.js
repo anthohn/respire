@@ -23,6 +23,8 @@ const ui = {
   sync: { entering: false, busy: false, error: '', draft: '' },
   ios: /iphone|ipad|ipod/i.test(navigator.userAgent),
   pipSupported: pipSupported(),
+  canVibrate: typeof navigator.vibrate === 'function', // absent sur iPhone : Apple ne le permet pas aux applications web
+  touch: matchMedia('(pointer: coarse)').matches,
   linux: /linux/i.test(navigator.userAgent) && !/android/i.test(navigator.userAgent),
   canInstall: false,
   iosHint: /iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone,
