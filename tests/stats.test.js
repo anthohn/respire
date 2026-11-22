@@ -221,19 +221,20 @@ const withStored = (obj) => {
 
 test('réglages : le guidage sonore est actif par défaut, y compris pour les anciens réglages', () => {
   assert.equal(withStored(null).sound, true);
-  assert.equal(withStored(null).soundStyle, 'vague');
+  assert.equal(withStored(null).soundStyle, 'bol');
   // Avant le guidage sonore : le son était coupé par défaut et avait d'autres réglages.
   const old = withStored({ settings: { sound: false, soundMode: 'fil', soundVolume: 40, presetId: 'long' } });
   assert.equal(old.sound, true);
-  assert.equal(old.soundStyle, 'vague');
+  assert.equal(old.soundStyle, 'bol');
   for (const k of ['soundMode', 'soundVolume', 'audioMode', 'audioStyle']) assert.ok(!(k in old), `${k} retiré`);
   // Le style choisi pendant la phase « mode audio » est gardé.
-  assert.equal(withStored({ settings: { audioStyle: 'nappe', audioMode: true } }).soundStyle, 'nappe');
+  assert.equal(withStored({ settings: { audioStyle: 'nappe', audioMode: true } }).soundStyle, 'bol'); // Nappe n'existe plus : on retombe sur le guidage par défaut
+  assert.equal(withStored({ settings: { soundStyle: 'vague' } }).soundStyle, 'bol'); // Vague non plus
   // Ensuite, le choix de l'utilisateur est respecté.
   const mine = withStored({ settings: { sound: false, soundStyle: 'reperes' } });
   assert.equal(mine.sound, false);
   assert.equal(mine.soundStyle, 'reperes');
-  assert.equal(withStored({ settings: { sound: true, soundStyle: 'inconnu' } }).soundStyle, 'vague');
+  assert.equal(withStored({ settings: { sound: true, soundStyle: 'inconnu' } }).soundStyle, 'bol');
 });
 
 import { isUnlimited, UNLIMITED, DURATIONS } from '../js/breath.js';

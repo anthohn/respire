@@ -6,7 +6,7 @@ import { PRESETS, getPreset, phaseAt } from './breath.js';
 import { tipOfTheDay, finishMessage } from './content.js';
 import { homeView, progressView, circleView, circleCardView, circlePreviewView, settingsView, sheetView, doneView, onboardingView } from './views.js';
 import { Session } from './session.js';
-import { renderTrack, wavBlob, TRACK_RATE } from './track.js';
+import { renderTrack, wavBlob, warmGuide, TRACK_RATE } from './track.js';
 import { icon } from './icons.js';
 import { pipSupported } from './pip.js';
 import { Aura, readPalette } from './aura.js';
@@ -1293,6 +1293,8 @@ checkInvite();
 render();
 scheduleSync(600);
 if (state.circle) setTimeout(() => refreshCircle({ silent: true }), 900);
+// Le premier son du bol se prépare pendant que l'on ne fait rien : la première séance démarre alors aussi vite que les suivantes.
+setTimeout(() => warmGuide(state.settings.soundStyle).catch(() => {}), 3000);
 window.addEventListener('hashchange', () => {
   checkInvite();
   render();

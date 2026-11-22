@@ -3,10 +3,10 @@
 // Pourquoi un fichier plutôt que des sons calculés en direct : le téléphone le lit comme un podcast. Il continue
 // écran verrouillé, avec des écouteurs ou en Bluetooth, et l'écran de verrouillage ou la voiture peuvent le mettre en pause.
 //
-// Le souffle est périodique (le même cycle revient toute la session) : on ne calcule donc qu'un cycle (ou quelques
-// variantes de bruit) qu'on recopie. Même pour dix minutes, la fabrication est quasi instantanée.
+// Le souffle est périodique (le même cycle revient toute la session) : on ne calcule donc que quelques sons
+// (une frappe par phase, une ouverture, une clôture) qu'on recopie. Même pour dix minutes, la fabrication est quasi instantanée.
 
-import { phaseAt, cycleLength, sessionPlan } from './breath.js';
+import { cycleLength, sessionPlan } from './breath.js';
 import { renderCue, gainFor, CUES, CHIMES } from './audio.js';
 
 export const TRACK_RATE = 11025; // les sons sont doux et graves : inutile d'aller plus haut (fichier deux fois plus léger)
@@ -14,14 +14,12 @@ export const LEAD = 5; // secondes pour s'installer avant la première inspirati
 export const TAIL = 5; // secondes de retombée après la dernière expiration
 
 export const GUIDE_STYLES = [
-  { id: 'vague', name: 'Vague', blurb: 'Une houle douce : elle enfle quand tu inspires, s’éloigne quand tu expires.' },
-  { id: 'nappe', name: 'Nappe', blurb: 'Une nappe de voyelles qui s’ouvre quand tu inspires et se referme quand tu expires.' },
-  { id: 'reperes', name: 'Repères', blurb: 'Seulement deux notes : l’une monte pour inspirer, l’autre descend pour expirer.' },
+  { id: 'bol', name: 'Bol', blurb: 'Un bol chantant : le si pour inspirer, le ré pour expirer. Un carillon grave ouvre et clôt la séance.' },
+  { id: 'reperes', name: 'Repères', blurb: 'Le guidage d’origine : une note qui monte pour inspirer, une qui descend pour expirer.' },
 ];
-export const DEFAULT_GUIDE = 'vague';
+export const DEFAULT_GUIDE = 'bol';
 
 const TAU = Math.PI * 2;
-const XFADE = 0.04; // demi-durée du fondu enchaîné entre deux morceaux de bruit (s)
 const PEAK = 0.5; // niveau maximal de la piste à volume 100 % (les boutons du téléphone règlent le reste)
 
 /** Plan d'une piste : durées de chaque partie, en secondes. */
@@ -38,8 +36,8 @@ export function trackPlan(preset, minutes, { cycles, lead = LEAD, tail = TAIL, l
 }
 
 /**
- * Nombre de cycles d'une piste en boucle : environ quatre minutes, et un multiple de 3 (les trois variantes de bruit
- * reviennent alors dans le même ordre, et la jonction entre la fin et le début est un fondu comme les autres).
+ * Nombre de cycles d'une piste en boucle : environ quatre minutes, et un multiple de 3 (la boucle reste ainsi un
+ * nombre rond de tours si un guidage venait à alterner trois variantes).
  */
 export function loopCycles(preset) {
   return 3 * Math.max(1, Math.round(80 / cycleLength(preset)));
@@ -59,71 +57,204 @@ function rng(seed) {
 const pause = () => new Promise((resolve) => setTimeout(resolve, 0));
 const mod = (i, n) => ((i % n) + n) % n;
 
-// ---------- Bruit de houle : du bruit filtré dont la clarté et le volume suivent le souffle ----------
+// ---------- Convolution rapide (FFT) : sert à la réverbération du bol ----------
 
-/** `bAt(i)` : niveau du souffle à l'échantillon i (i peut sortir de [0, n) pour les recouvrements). Rend n + 2X échantillons. */
-function noiseSegment(seed, n, X, rate, bAt) {
-  const rand = rng(seed);
-  const warm = Math.round(0.3 * rate); // le filtre se met en régime avant le début
-  const out = new Float32Array(n + 2 * X);
+const twiddles = new Map();
+
+/** Transformée de Fourier rapide sur place (taille = puissance de 2). `inverse` : transformée inverse, normalisée. */
+function fft(re, im, inverse = false) {
+  const n = re.length;
+  let tw = twiddles.get(n);
+  if (!tw) {
+    tw = { cos: new Float64Array(n / 2), sin: new Float64Array(n / 2) };
+    for (let i = 0; i < n / 2; i++) {
+      tw.cos[i] = Math.cos((TAU * i) / n);
+      tw.sin[i] = Math.sin((TAU * i) / n);
+    }
+    twiddles.set(n, tw);
+  }
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      [re[i], re[j]] = [re[j], re[i]];
+      [im[i], im[j]] = [im[j], im[i]];
+    }
+  }
+  const sign = inverse ? 1 : -1;
+  for (let len = 2; len <= n; len <<= 1) {
+    const half = len >> 1;
+    const step = n / len;
+    for (let i = 0; i < n; i += len) {
+      for (let k = 0; k < half; k++) {
+        const wr = tw.cos[k * step];
+        const wi = sign * tw.sin[k * step];
+        const a = i + k;
+        const b = a + half;
+        const xr = re[b] * wr - im[b] * wi;
+        const xi = re[b] * wi + im[b] * wr;
+        re[b] = re[a] - xr;
+        im[b] = im[a] - xi;
+        re[a] += xr;
+        im[a] += xi;
+      }
+    }
+  }
+  if (inverse) {
+    for (let i = 0; i < n; i++) {
+      re[i] /= n;
+      im[i] /= n;
+    }
+  }
+}
+
+const irSpectra = new WeakMap(); // réponse -> { taille -> spectre }
+
+/** Convolution de `x` avec la réponse `ir` (longueur x + ir - 1), par FFT. Le spectre de la réponse est gardé. */
+export function convolve(x, ir) {
+  const out = x.length + ir.length - 1;
+  let n = 1;
+  while (n < out) n <<= 1;
+  let bySize = irSpectra.get(ir);
+  if (!bySize) irSpectra.set(ir, (bySize = new Map()));
+  let h = bySize.get(n);
+  if (!h) {
+    h = { re: new Float64Array(n), im: new Float64Array(n) };
+    h.re.set(ir);
+    fft(h.re, h.im);
+    bySize.set(n, h);
+  }
+  const re = new Float64Array(n);
+  const im = new Float64Array(n);
+  re.set(x);
+  fft(re, im);
+  for (let i = 0; i < n; i++) {
+    const r = re[i] * h.re[i] - im[i] * h.im[i];
+    im[i] = re[i] * h.im[i] + im[i] * h.re[i];
+    re[i] = r;
+  }
+  fft(re, im, true);
+  return Float32Array.from(re.subarray(0, out));
+}
+
+// ---------- Bol chantant : deux frappes par cycle, un carillon grave pour ouvrir et clore ----------
+
+const BOWL = { inhale: 493.88, exhale: 293.66 }; // si4 pour inspirer, ré4 pour expirer
+// do4 fa4 la4 do5 : aucune des notes de respiration (si, ré), dans un autre timbre, pour ne rien confondre avec elles
+const CHIME_NOTES = [261.63, 349.23, 440.0, 523.25];
+// [rapport de fréquence, amplitude, durée de chute (s), battement de la copie désaccordée (Hz)]
+const BOWL_MODES = [[1.0, 1.0, 2.6, 0.7], [2.71, 0.34, 1.5, 1.1], [5.15, 0.1, 0.7, 1.7]];
+const CHIME_MODES = [[1.0, 1.0, 1.1, 0.8], [2.76, 0.3, 0.55, 1.2], [5.4, 0.09, 0.3, 1.9]];
+const SHIMMER = 0.14; // poids de la copie désaccordée : la résonance ondule à peine (±0,5 dB)
+// Les frappes sont brèves : à crête égale, le bol paraîtrait plus discret que Repères. Ce gain donne le même niveau perçu (même RMS).
+const BOL_GAIN = 1.29;
+const MARK_MIN = 4; // une ouverture ou une clôture ne se joue que si l'installation ou la retombée dure au moins ça (s)
+
+/** Une note de cloche : somme de modes qui s'éteignent, attaque douce (aucune variation de hauteur, aucun bruit). */
+function modal(freq, dur, modes, attack, rate) {
+  const n = Math.round(dur * rate);
+  const out = new Float32Array(n);
+  for (const [ratio, amp, tau, beat] of modes) {
+    for (const [detune, weight] of [[0, 1 - SHIMMER], [beat, SHIMMER]]) {
+      const w = (TAU * (freq * ratio + detune)) / rate;
+      for (let i = 0; i < n; i++) {
+        const t = i / rate;
+        const a = Math.sin((Math.min(1, t / attack) * Math.PI) / 2);
+        out[i] += weight * amp * Math.sin(w * i) * a * a * Math.exp(-t / tau);
+      }
+    }
+  }
+  const end = Math.round(0.12 * rate);
+  for (let i = 0; i < Math.min(end, n); i++) out[n - 1 - i] *= i / end; // la note se referme sans clic
+  return out;
+}
+
+/** « La salle » : du bruit adouci qui s'éteint en 2,8 s, normalisé en énergie. Même graine : même salle à chaque fois. */
+function roomImpulse(rate) {
+  const n = Math.round(2.8 * rate);
+  const pre = Math.round(0.025 * rate);
+  const rand = rng(77);
+  const a = 1 - Math.exp((-TAU * 2200) / rate);
+  const ir = new Float32Array(n);
   let y1 = 0;
   let y2 = 0;
-  for (let k = -warm - X; k < n + X; k++) {
-    const b = bAt(k);
-    const fc = 200 + 1900 * Math.pow(b, 1.2); // plus claire quand les poumons sont pleins
-    const a = 1 - Math.exp((-TAU * fc) / rate);
+  let e = 0;
+  for (let i = 0; i < n; i++) {
     y1 += a * (rand() - y1);
     y2 += a * (y1 - y2);
-    if (k >= -X) out[k + X] = y2 * (0.1 + 0.9 * Math.pow(b, 1.1)) * (0.5 / Math.sqrt(a));
+    if (i >= pre) {
+      ir[i] = y2 * Math.exp(-i / (0.75 * rate));
+      e += ir[i] * ir[i];
+    }
   }
-  return out;
+  const k = 1 / Math.sqrt(e);
+  for (let i = 0; i < n; i++) ir[i] *= k;
+  return ir;
 }
 
-// ---------- Parties tonales (parfaitement périodiques : leurs fréquences font un nombre entier d'oscillations par cycle) ----------
+const DRY = 0.68; // part du son sec ; le reste est la réverbération
+const sumSquares = (a, seconds, rate) => {
+  let e = 0;
+  const n = Math.min(a.length, Math.round(seconds * rate));
+  for (let i = 0; i < n; i++) e += a[i] * a[i];
+  return e;
+};
 
-const harmonicBase = (hz, len) => Math.round(hz * len) / len;
+const bolCache = new Map();
 
-/** Fond grave de la houle : une octave et une quinte, qui respirent avec le souffle. */
-function bedSegment(i0, n, rate, len, bAt) {
-  const f0 = harmonicBase(98, len);
-  const out = new Float32Array(n);
-  for (let k = 0; k < n; k++) {
-    const t = (i0 + k) / rate;
-    const b = bAt(i0 + k);
-    out[k] = (0.5 * Math.sin(TAU * f0 * t) + 0.3 * Math.sin(TAU * 2 * f0 * t) + 0.2 * Math.sin(TAU * 3 * f0 * t)) * (0.25 + 0.75 * b) * 0.32;
+/** Les quatre sons du bol (inspirer, expirer, ouverture, clôture), réverbération comprise. Calculés une fois par fréquence d'échantillonnage. */
+function bolSounds(rate) {
+  if (!bolCache.has(rate)) {
+    bolCache.set(
+      rate,
+      (async () => {
+        const room = roomImpulse(rate);
+        const wet = (dry) => {
+          const conv = convolve(dry, room);
+          const out = new Float32Array(conv.length);
+          for (let i = 0; i < conv.length; i++) out[i] = (1 - DRY) * conv[i] + (i < dry.length ? DRY * dry[i] : 0);
+          return out;
+        };
+        const inhale = wet(modal(BOWL.inhale, 5, BOWL_MODES, 0.02, rate));
+        await pause();
+        const exhale = wet(modal(BOWL.exhale, 5, BOWL_MODES, 0.02, rate));
+        await pause();
+        const place = (buf, at, note, dur) => {
+          const sig = modal(note, dur, CHIME_MODES, 0.008, rate);
+          const a = Math.round(at * rate);
+          for (let i = 0; i < sig.length; i++) buf[a + i] += sig[i];
+        };
+        const [n1, n2, n3, n4] = CHIME_NOTES;
+        const introDry = new Float32Array(Math.round(4.4 * rate));
+        [n1, n2, n3].forEach((f, i) => place(introDry, 0.5 + 0.3 * i, f, 1.6)); // monte
+        place(introDry, 1.4, n4, 3.0);
+        const outroDry = new Float32Array(Math.round(4.8 * rate));
+        place(outroDry, 0.3, n4, 1.6); // redescend
+        place(outroDry, 0.6, n3, 1.6);
+        place(outroDry, 0.9, n2, 1.6);
+        place(outroDry, 1.5, n1, 3.3);
+        const intro = wet(introDry);
+        await pause();
+        const outro = wet(outroDry);
+        // L'ouverture et la clôture ont le niveau d'un cycle de respiration (énergie sur les 5 s de l'installation / de la retombée).
+        const cycleEnergy = sumSquares(inhale, 10, rate) + sumSquares(exhale, 10, rate);
+        const gIntro = Math.sqrt(cycleEnergy / 10 / (sumSquares(intro, 5, rate) / 5));
+        const gOutro = Math.sqrt(cycleEnergy / 10 / (sumSquares(outro, 5, rate) / 5));
+        for (let i = 0; i < intro.length; i++) intro[i] *= gIntro;
+        for (let i = 0; i < outro.length; i++) outro[i] *= gOutro;
+        let refPeak = 1e-9;
+        for (const a of [inhale, exhale, intro, outro]) for (let i = 0; i < a.length; i++) if (Math.abs(a[i]) > refPeak) refPeak = Math.abs(a[i]);
+        return { inhale, exhale, intro, outro, refPeak };
+      })(),
+    );
   }
-  return out;
+  return bolCache.get(rate);
 }
 
-/** Nappe : deux voix aux harmoniques pondérées par deux formants qui glissent de « ou » (poumons vides) vers « a » (pleins). */
-function padSegment(i0, n, rate, len, bAt) {
-  const voices = [harmonicBase(110, len), harmonicBase(165, len)];
-  const H = 10;
-  const out = new Float32Array(n);
-  const weights = voices.map(() => new Float32Array(H + 1));
-  const BLOCK = 32;
-  for (let k = 0; k < n; k++) {
-    const b = bAt(i0 + k);
-    if (k % BLOCK === 0) {
-      const f1 = 300 + 500 * b;
-      const f2 = 870 + 330 * b;
-      voices.forEach((f0, v) => {
-        for (let h = 1; h <= H; h++) {
-          const f = h * f0;
-          weights[v][h] = Math.exp(-0.5 * ((f - f1) / 120) ** 2) + 0.7 * Math.exp(-0.5 * ((f - f2) / 170) ** 2) + 0.12 / h;
-        }
-      });
-    }
-    const t = (i0 + k) / rate;
-    let sum = 0;
-    for (let v = 0; v < voices.length; v++) {
-      const w = weights[v];
-      const f0 = voices[v];
-      for (let h = 1; h <= H; h++) sum += w[h] * Math.sin(TAU * h * f0 * t);
-    }
-    out[k] = sum * (0.15 + 0.85 * b) * 0.12;
-  }
-  return out;
+/** À appeler un peu après le démarrage de l'application : le premier son du bol se prépare pendant que l'on ne fait rien. */
+export function warmGuide(style = DEFAULT_GUIDE, rate = TRACK_RATE) {
+  return style === 'reperes' ? Promise.resolve() : bolSounds(rate);
 }
 
 // ---------- Rendu ----------
@@ -141,31 +272,29 @@ function mixInto(pcm, at, src, scale, weight, circular = false) {
 
 /**
  * Fabrique la piste. Renvoie { pcm: Int16Array, rate, plan }.
- * `style` : 'vague' | 'nappe' | 'reperes'. `volume` : 0..100 (niveau de la piste ; le volume du téléphone règle le reste).
+ * `style` : 'bol' | 'reperes'. `volume` : 0..100 (niveau de la piste ; le volume du téléphone règle le reste).
  */
 export async function renderTrack({ preset, minutes, cycles, style = DEFAULT_GUIDE, volume = 100, lead, tail, rate = TRACK_RATE, loop = false } = {}) {
   const plan = trackPlan(preset, minutes, { cycles, lead, tail, loop });
   const L = plan.len * rate;
   const leadN = Math.round(plan.lead * rate);
   const tailN = Math.round(plan.tail * rate);
-  const X = Math.round(XFADE * rate);
   const total = leadN + plan.cycles * L + tailN;
   const pcm = new Int16Array(total);
-  const bTable = new Float32Array(L);
-  for (let i = 0; i < L; i++) bTable[i] = phaseAt(preset, i / rate).breath;
-  const bCycle = (i) => bTable[mod(i, L)];
-  const silent = () => 0;
   const level = PEAK * gainFor(volume);
 
   // Fondu d'entrée et de sortie de toute la piste.
-  const fadeIn = loop ? 0 : style === 'reperes' ? 0.05 : 2;
-  const fadeOut = loop ? 0 : style === 'reperes' ? 0.6 : 3;
-  const master = (i) => {
-    if (loop) return 1;
-    const a = Math.min(1, i / (fadeIn * rate));
-    const b = Math.min(1, (total - i) / (fadeOut * rate));
-    const x = Math.min(a, b);
-    return x * x * (3 - 2 * x); // lissé
+  const resumes = style !== 'reperes' && plan.cycles === 0 && leadN === 0; // retombée seule, qui prolonge la piste en boucle
+  const fadeIn = loop || resumes ? 0 : 0.05;
+  const fadeOut = loop ? 0 : style === 'reperes' ? 0.6 : 1.2;
+  const fade = () => {
+    if (loop) return;
+    for (let i = 0; i < total; i++) {
+      if (i < fadeIn * rate || total - i < fadeOut * rate) {
+        const x = Math.min(fadeIn > 0 ? Math.min(1, i / (fadeIn * rate)) : 1, Math.min(1, (total - i) / (fadeOut * rate)));
+        pcm[i] = Math.round(pcm[i] * x * x * (3 - 2 * x)); // lissé
+      }
+    }
   };
 
   if (style === 'reperes') {
@@ -192,61 +321,31 @@ export async function renderTrack({ preset, minutes, cycles, style = DEFAULT_GUI
       const endChime = new Float32Array(tailN + rate);
       place(endChime, CHIMES.end, 0, false);
       mixInto(pcm, leadN + plan.cycles * L, endChime.subarray(0, tailN), level / peak);
-      for (let i = 0; i < total; i++) if (i < fadeIn * rate || total - i < fadeOut * rate) pcm[i] = Math.round(pcm[i] * master(i));
+      fade();
     }
     return { pcm, rate, plan };
   }
 
-  const tonal = style === 'nappe' ? padSegment : bedSegment;
-  const useNoise = style === 'vague';
-  await pause();
-
-  // Un cycle de partie tonale (identique à chaque tour) et trois variantes de bruit (pour qu'on n'entende jamais de boucle).
-  const tonalCycle = tonal(0, L, rate, plan.len, bCycle);
-  const variants = useNoise ? [101, 202, 303].map((seed) => noiseSegment(seed, L, X, rate, bCycle)) : [];
-  await pause();
-
-  // Niveau : le plus haut pic d'un cycle complet (partie tonale + bruit), ramené au niveau voulu.
-  let peak = 1e-9;
-  for (let v = 0; v < Math.max(1, variants.length); v++) {
-    for (let i = 0; i < L; i++) {
-      const s = tonalCycle[i] + (variants[v] ? variants[v][i + X] : 0);
-      if (Math.abs(s) > peak) peak = Math.abs(s);
-    }
-  }
-  const scale = (level / peak) * 0.92; // un peu de marge pour les recouvrements
-
-  // Poids d'un morceau de bruit : fondu d'entrée sur 2X, corps à 1, fondu de sortie sur 2X (puissance constante).
-  const noiseWeight = (n, first, last) => (j) => {
-    if (!first && j < 2 * X) return Math.sin(((Math.PI / 2) * j) / (2 * X));
-    if (!last && j >= n) return Math.cos(((Math.PI / 2) * (j - n)) / (2 * X));
-    return 1;
-  };
-
-  // Début : fond au niveau « poumons vides ».
-  if (leadN > 0) {
-    mixInto(pcm, 0, tonal(-leadN, leadN, rate, plan.len, silent), scale);
-    if (useNoise) mixInto(pcm, -X, noiseSegment(7, leadN, X, rate, silent), scale, noiseWeight(leadN, true, false));
-  }
-  // Cycles.
-  for (let c = 0; c < plan.cycles; c++) {
-    const s = leadN + c * L;
-    mixInto(pcm, s, tonalCycle, scale);
-    if (useNoise) mixInto(pcm, s - X, variants[c % variants.length], scale, noiseWeight(L, false, false), loop);
-    if (c % 8 === 7) await pause();
-  }
-  // Fin.
-  const tailAt = leadN + plan.cycles * L;
-  if (tailN > 0) {
-    mixInto(pcm, tailAt, tonal(plan.cycles * L, tailN, rate, plan.len, silent), scale);
-    if (useNoise) mixInto(pcm, tailAt - X, noiseSegment(11, tailN, X, rate, silent), scale, noiseWeight(tailN, false, true));
-  }
-
-  if (!loop) {
-    for (let i = 0; i < total; i++) {
-      if (i < fadeIn * rate || total - i < fadeOut * rate) pcm[i] = Math.round(pcm[i] * master(i));
-    }
-  }
+  // Bol : une frappe à chaque début d'inspiration (si) et d'expiration (ré), une résonance qui déborde sur la suite.
+  const sounds = await bolSounds(rate);
+  const exhaleAt = Math.round((preset.inhale + preset.hold1) * rate);
+  const cycle = new Float32Array(Math.max(L, sounds.inhale.length, exhaleAt + sounds.exhale.length));
+  for (let i = 0; i < sounds.inhale.length; i++) cycle[i] += sounds.inhale[i];
+  for (let i = 0; i < sounds.exhale.length; i++) cycle[exhaleAt + i] += sounds.exhale[i];
+  const bolLevel = level * BOL_GAIN;
+  const scale = bolLevel / sounds.refPeak;
+  // En boucle, la résonance de la fin du tour se prolonge sur le début (la jonction est invisible) ; sinon elle déborde sur la suite.
+  for (let c = 0; c < plan.cycles; c++) mixInto(pcm, leadN + c * L, cycle, scale, null, loop);
+  // Une retombée seule (fin d'une longue séance) reprend la résonance du cycle précédent, que la piste en boucle vient de laisser.
+  if (!loop && plan.cycles === 0 && leadN === 0) mixInto(pcm, -L, cycle, scale);
+  if (!loop && plan.lead >= MARK_MIN) mixInto(pcm, 0, sounds.intro, scale);
+  if (!loop && plan.tail >= MARK_MIN) mixInto(pcm, leadN + plan.cycles * L, sounds.outro, scale);
+  // Jamais plus fort que le niveau demandé, même si des résonances se superposent.
+  let peak = 0;
+  for (let i = 0; i < total; i++) if (Math.abs(pcm[i]) > peak) peak = Math.abs(pcm[i]);
+  const cap = bolLevel * 32767;
+  if (peak > cap) for (let i = 0; i < total; i++) pcm[i] = Math.round((pcm[i] * cap) / peak);
+  fade();
   return { pcm, rate, plan };
 }
 
