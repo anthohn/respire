@@ -25,6 +25,7 @@ export const LIMITS = {
   inbox: 20, // messages gardés par membre
   tooSoonMs: 60 * 60 * 1000, // un même membre ne peut écrire qu'une fois par heure à un autre
   ttlSeconds: 60 * 60 * 24 * 90, // un cercle sans écriture pendant 90 jours disparaît
+  staleMs: 45 * 24 * 60 * 60 * 1000, // une fiche muette depuis 45 jours (app désinstallée, doublon abandonné) est retirée
   body: 24 * 1024,
 };
 const RETRIES = 10;
@@ -45,6 +46,15 @@ const sameHash = (a, b) => {
   const x = Buffer.from(a, 'hex');
   const y = Buffer.from(b, 'hex');
   return x.length === y.length && timingSafeEqual(x, y);
+};
+/** Retire les fiches muettes depuis trop longtemps (et leur boîte) : elles ne gardent ni une place ni la série. */
+const prune = (doc, now) => {
+  for (const [mid, m] of Object.entries(doc.members)) {
+    if (now - m.at > LIMITS.staleMs) {
+      delete doc.members[mid];
+      delete doc.inbox[mid];
+    }
+  }
 };
 const validBlob = (b, max) => !!b && typeof b.iv === 'string' && typeof b.ct === 'string' && b.iv.length + b.ct.length <= max && b.iv.length > 0 && b.ct.length > 0;
 
@@ -77,6 +87,7 @@ export function createHandler(store) {
       for (let i = 0; i < RETRIES; i++) {
         const rec = await store.get(dbKey);
         const doc = rec ?? { rev: 0, members: {}, inbox: {} };
+        prune(doc, Date.now());
         const out = change(doc);
         if (out.error) return send(out.error[0], { error: out.error[1] });
         if (out.remove) {
@@ -102,9 +113,11 @@ export function createHandler(store) {
         const rec = await store.get(dbKey);
         if (!rec) return send(404, { error: 'not_found' });
         const me = typeof body.me === 'string' && MID_RE.test(body.me) ? body.me : null;
+        const now = Date.now();
+        const live = Object.entries(rec.members).filter(([, m]) => now - m.at <= LIMITS.staleMs); // les fiches muettes ne s'affichent plus
         return send(200, {
           rev: rec.rev,
-          members: Object.entries(rec.members).map(([mid, m]) => ({ mid, blob: m.blob, at: m.at })),
+          members: live.map(([mid, m]) => ({ mid, blob: m.blob, at: m.at })),
           inbox: me ? rec.inbox[me] ?? [] : [],
         });
       }

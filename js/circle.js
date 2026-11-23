@@ -60,6 +60,7 @@ export const cleanName = (value) => String(value ?? '').replace(/[\u0000-\u001f\
 // ---------- Statut partagé ----------
 
 const WINDOW = 28; // nombre de jours de pratique partagés
+export const PAUSE_DAYS = 14; // sans respirer depuis tant de jours, on est « en pause » : on ne compte plus dans la série du cercle
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const daysBetween = (a, b) => Math.round((parseKey(a) - parseKey(b)) / 86400000);
 
@@ -119,6 +120,7 @@ export function memberView(status, today) {
   return {
     name: status.name || 'Quelqu’un',
     state,
+    paused: !inPlay(status, today),
     lastLabel: sinceLabel(status.last, today),
     streak: state === 'lapsed' || state === 'new' ? 0 : status.streak,
     best: status.best,
@@ -150,8 +152,25 @@ export function dayActive(status, key) {
   return i >= 0 ? status.week[i] === '1' : null;
 }
 
+/**
+ * Un membre compte, un jour donné, s'il a respiré au moins une fois dans les 14 jours qui précèdent (ce jour compris).
+ * Ainsi un fantôme (une fiche abandonnée, un doublon) ne bloque jamais la série, et quelqu'un qui arrive ne la gêne
+ * pas avant sa première séance ; quand il revient, il ne casse pas non plus ce qui s'est passé avant lui.
+ * Si on ne sait pas (version plus ancienne de l'application, jours trop lointains), on ne l'écarte pas.
+ */
+function inPlay(status, key) {
+  let unknown = false;
+  for (let i = 0; i < PAUSE_DAYS; i++) {
+    const a = dayActive(status, addDays(key, -i));
+    if (a === true) return true;
+    if (a === null) unknown = true;
+  }
+  return unknown;
+}
+
 function dayInfo(members, key) {
-  const present = members.filter((m) => !m.status.since || m.status.since <= key); // ceux déjà dans le cercle ce jour-là
+  // ceux déjà dans le cercle ce jour-là, et qui ne sont pas en pause
+  const present = members.filter((m) => (!m.status.since || m.status.since <= key) && inPlay(m.status, key));
   const done = present.filter((m) => dayActive(m.status, key) === true);
   return { present, done, valid: present.length >= 2 && done.length === present.length };
 }
@@ -194,6 +213,7 @@ export function missingText(missing) {
 /** La phrase du moment : où en est la série, et ce qu'il reste à faire aujourd'hui. */
 export function seriesLine(series) {
   if (!series) return '';
+  if (series.total < 2) return 'La série du cercle démarre dès que quelqu’un d’autre respire';
   const days = series.days > 0 ? `Série du cercle : ${series.days} jour${series.days > 1 ? 's' : ''}` : '';
   if (series.todayValid) return series.days > 1 ? `${days} ✨` : 'Jour validé ✨ La série du cercle démarre';
   const todo = missingText(series.missing);
@@ -212,6 +232,7 @@ export function withMe(state, members, today) {
 
 /** Sous le compteur du cercle : ce qui reste à faire aujourd'hui. */
 export function todayLine(series) {
+  if (series.total < 2) return 'La série démarre dès que quelqu’un d’autre respire';
   if (series.todayValid) return 'Tout le monde a respiré aujourd’hui ✨';
   const t = missingText(series.missing);
   return `${t.charAt(0).toUpperCase()}${t.slice(1)} pour ${series.days > 0 ? 'garder' : 'lancer'} la série`;

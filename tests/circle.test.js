@@ -315,3 +315,77 @@ test('dernière séance : hier, il y a 6 j', () => {
   assert.equal(sinceLabel(addDays(TODAY, -6), TODAY), 'il y a 6 j');
   assert.equal(sinceLabel('', TODAY), '');
 });
+
+// ---------- Les fantômes ne bloquent jamais la série ----------
+
+import { PAUSE_DAYS, todayLine, memberView as viewOf } from '../js/circle.js';
+
+const run = (...offs) => offs;
+const daily = Array.from({ length: 30 }, (_, i) => -i);
+
+test('fantômes : une fiche qui n’a jamais respiré (un doublon, quelqu’un parti) ne bloque pas la série', () => {
+  const members = [person('Léa', daily, { me: true }), person('Paul', daily), person('Fantôme', [], { since: -5 })];
+  const s = circleSeries(members, TODAY);
+  assert.equal(s.days, 28, 'la série continue sans lui');
+  assert.equal(s.todayValid, true);
+  assert.deepEqual([s.done, s.total], [2, 2], 'il n’est pas compté dans le cercle du jour');
+  assert.equal(viewOf(members[2].status, TODAY).paused, true);
+  assert.equal(viewOf(members[0].status, TODAY).paused, false);
+});
+
+test('fantômes : sans séance depuis plus de 14 jours, on est en pause ; avant, on compte encore', () => {
+  const lea = person('Léa', daily, { me: true });
+  const paul = person('Paul', daily);
+  const tired = (ago) => person('Max', Array.from({ length: 5 }, (_, i) => -(ago + i)));
+  // 10 jours sans respirer : il compte, et il manque
+  const recent = circleSeries([lea, paul, tired(10)], TODAY);
+  assert.equal(recent.days, 0, 'il a manqué hier : la série du cercle est cassée');
+  assert.ok(recent.missing.some((m) => m.name === 'Max'));
+  assert.equal(viewOf(tired(10).status, TODAY).paused, false);
+  // 20 jours : en pause, la série ne le compte plus
+  const gone = tired(PAUSE_DAYS + 6);
+  assert.equal(viewOf(gone.status, TODAY).paused, true);
+  const s = circleSeries([lea, paul, gone], TODAY);
+  assert.equal(s.todayValid, true);
+  assert.equal(s.days, 7, 'tant qu’il comptait encore (jusqu’à 14 jours après sa dernière séance), la série était cassée : elle repart d’il y a 6 jours');
+  assert.deepEqual(s.missing, []);
+});
+
+test('fantômes : quelqu’un qui arrive ne gêne rien avant sa première séance, ni après (il ne casse pas le passé)', () => {
+  const base = [person('Léa', daily, { me: true }), person('Paul', daily)];
+  const alone = circleSeries(base, TODAY).days;
+  // Il vient de rejoindre et n'a encore rien fait : la série ne bouge pas.
+  const newcomer = person('Nina', [], { since: -2 });
+  assert.equal(circleSeries([...base, newcomer], TODAY).days, alone);
+  // Première séance aujourd'hui : il compte aujourd'hui, mais n'a pas cassé les jours d'avant.
+  const first = person('Nina', [0], { since: -2 });
+  const s = circleSeries([...base, first], TODAY);
+  assert.equal(s.days, alone);
+  assert.equal(s.total, 3);
+  // Il respire un jour sur deux : dès le lendemain d'un jour manqué, la série du cercle casse comme pour tout le monde.
+  const spotty = person('Nina', [0, -2], { since: -4 });
+  assert.equal(circleSeries([...base, spotty], addDays(TODAY, 0)).days, 1, 'hier manqué par quelqu’un qui compte : on repart d’aujourd’hui');
+});
+
+test('fantômes : quelqu’un qui revient après une longue absence ne casse pas la série qui a continué sans lui', () => {
+  // Max a respiré il y a 25 à 30 jours, puis revient aujourd'hui.
+  const max = person('Max', [0, -25, -26, -27, -28, -29, -30], { since: -40 });
+  const s = circleSeries([person('Léa', daily, { me: true }), person('Paul', daily), max], TODAY);
+  assert.equal(s.todayValid, true);
+  assert.equal(s.days, 12, 'de -11 à aujourd’hui : avant, Max comptait encore (14 jours après sa dernière séance) et manquait');
+});
+
+test('fantômes : seul avec des fiches en pause, la série attend quelqu’un d’autre (pas de « il manque 0 personne »)', () => {
+  const s = circleSeries([person('Léa', [0, -1], { me: true }), person('Fantôme', [], { since: -3 })], TODAY);
+  assert.equal(s.total, 1);
+  assert.equal(s.todayValid, false);
+  assert.deepEqual(s.missing, []);
+  assert.equal(todayLine(s), 'La série démarre dès que quelqu’un d’autre respire');
+  assert.equal(seriesLine(s), 'La série du cercle démarre dès que quelqu’un d’autre respire');
+});
+
+test('fantômes : une fiche d’une ancienne version (sans les 28 jours) n’est pas écartée à tort', () => {
+  const p = person('Vieux', [-20], { since: -40 });
+  p.status.acts = ''; // ancienne application : seulement la semaine en cours
+  assert.equal(viewOf(p.status, TODAY).paused, false, 'on ne sait pas : on ne l’écarte pas');
+});

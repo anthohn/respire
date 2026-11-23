@@ -153,3 +153,47 @@ test('validation : adresses, tailles, méthode, base absente', async () => {
   });
   assert.equal(res.body.error, 'not_configured');
 });
+
+test('fiches muettes : retirées après 45 jours (elles ne gardent ni une place ni la série), et un retour se réinscrit', async (t) => {
+  const { call } = setup();
+  const DAY = 24 * 60 * 60 * 1000;
+  const T0 = Date.now();
+  let now = T0;
+  t.mock.method(Date, 'now', () => now);
+  const [a, b, c] = [member(1), member(2), member(3)];
+  await call({ op: 'put', id: ID, ...a, blob: blob('A') });
+  now = T0 + 30 * DAY;
+  await call({ op: 'put', id: ID, ...b, blob: blob('B') });
+  now = T0 + 44 * DAY;
+  assert.equal((await call({ op: 'get', id: ID })).body.members.length, 2, 'à 44 jours, A est encore là');
+  now = T0 + 46 * DAY;
+  const got = (await call({ op: 'get', id: ID })).body;
+  assert.deepEqual(got.members.map((m) => m.mid), [b.mid], 'à 46 jours, la fiche de A ne s’affiche plus');
+  // Une écriture la retire pour de bon, et libère sa place.
+  await call({ op: 'put', id: ID, ...c, blob: blob('C') });
+  assert.deepEqual((await call({ op: 'get', id: ID })).body.members.map((m) => m.mid).sort(), [b.mid, c.mid].sort());
+  // A revient (il rouvre l'application) : il se réinscrit avec la même clé.
+  assert.equal((await call({ op: 'put', id: ID, ...a, blob: blob('A de retour') })).status, 200);
+  assert.equal((await call({ op: 'get', id: ID })).body.members.length, 3);
+});
+
+test('fiches muettes : elles libèrent leur place dans un cercle complet, et leur boîte avec', async (t) => {
+  const { call } = setup();
+  const DAY = 24 * 60 * 60 * 1000;
+  const T0 = Date.now();
+  let now = T0;
+  t.mock.method(Date, 'now', () => now);
+  for (let i = 1; i <= LIMITS.members; i++) await call({ op: 'put', id: ID, ...member(i), blob: blob(`M${i}`) });
+  const extra = member(99);
+  assert.equal((await call({ op: 'put', id: ID, ...extra, blob: blob('X') })).status, 403, 'complet');
+  const [a, b] = [member(1), member(2)];
+  await call({ op: 'send', id: ID, from: b.mid, key: b.key, to: a.mid, blob: blob('signe de B à A') });
+  now = T0 + 40 * DAY;
+  await call({ op: 'put', id: ID, ...b, blob: blob('B actif') }); // B reste actif, les autres se taisent
+  now = T0 + 50 * DAY;
+  assert.equal((await call({ op: 'put', id: ID, ...extra, blob: blob('X') })).status, 200, 'les fiches muettes ont libéré des places');
+  const got = (await call({ op: 'get', id: ID, me: b.mid })).body;
+  assert.deepEqual(got.members.map((m) => m.mid).sort(), [b.mid, extra.mid].sort());
+  const store = await call({ op: 'get', id: ID, me: a.mid });
+  assert.equal(store.body.inbox.length, 0, 'la boîte de la fiche retirée a disparu avec elle');
+});

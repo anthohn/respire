@@ -214,7 +214,9 @@ export function circleCardView(c) {
   const todo = series && !series.todayValid ? missingText(series.missing) : '';
   const sub = !others.length
     ? 'Ton cercle est encore vide'
-    : `${series.todayValid ? 'Tout le monde a respiré ✨' : `${todo.charAt(0).toUpperCase()}${todo.slice(1)}`}${cs.error ? ' · hors ligne' : ''}`;
+    : series.total < 2
+      ? `Elle démarre dès que quelqu’un d’autre respire${cs.error ? ' · hors ligne' : ''}`
+      : `${series.todayValid ? 'Tout le monde a respiré ✨' : `${todo.charAt(0).toUpperCase()}${todo.slice(1)}`}${cs.error ? ' · hors ligne' : ''}`;
   const faces = views.slice(0, 5).map(({ m, v }) => avatar(m.mid, v.name, v.state === 'done')).join('');
   return `${banners}<section class="card circle-card rise ${series?.todayValid ? 'valid' : ''}">
     <button class="cc-main" data-action="tab" data-tab="circle">
@@ -249,7 +251,8 @@ const STATE_TEXT = {
 /** Ce qui se lit sous le prénom : l'état du jour, et depuis quand pour ceux qui ont décroché. */
 function stateText(v, me) {
   const base = STATE_TEXT[v.state][me ? 1 : 0];
-  return v.state === 'lapsed' && v.lastLabel ? `Dernière séance ${v.lastLabel}` : base;
+  if (v.state === 'lapsed' && v.lastLabel) return v.paused ? `En pause · dernière séance ${v.lastLabel}` : `Dernière séance ${v.lastLabel}`;
+  return base;
 }
 
 /** Ce que l'on peut faire pour quelqu'un : un bravo s'il a respiré, un petit signe sinon (une fois par jour). */
