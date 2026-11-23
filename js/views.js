@@ -9,7 +9,8 @@ import { DAY_LETTERS, MONTHS, FEELINGS, greeting, moment } from './content.js';
 import { journeyLayout, STEPS } from './journey.js';
 import { GUIDE_STYLES } from './track.js';
 import { formatCode } from './sync.js';
-import { memberView, sortMembers, canSend, SIGNS, MAX_MEMBERS, circleSeries, weekOverview, missingText, todayLine, withMe } from './circle.js';
+import { qrSvg } from './qr.js';
+import { memberView, sortMembers, canSend, SIGNS, MAX_MEMBERS, circleSeries, weekOverview, missingText, todayLine, withMe, inviteLink } from './circle.js';
 
 export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
@@ -298,6 +299,10 @@ function inviteBlock(cs, circle, alone) {
   const code = cs.showCode
     ? `<div class="code-box"><span class="code" aria-label="Code du cercle">${esc(formatCode(circle.code))}</span><p class="fine">Quelqu’un qui a ce code peut rejoindre le cercle et lire les statuts. Ne le partage qu’avec tes proches.</p></div>`
     : '';
+  // Le QR code encode le même lien que « Inviter » : un proche à côté de toi le scanne avec l'appareil photo.
+  const qr = cs.showQr
+    ? `<div class="qr-box"><div class="qr">${qrSvg(inviteLink(circle.code), { label: 'QR code pour rejoindre le cercle' })}</div><p class="fine">Il lui suffit de le scanner avec l’appareil photo de son téléphone. Ne le montre qu’à tes proches.</p></div>`
+    : '';
   if (alone) {
     return `<section class="card invite first rise">
       <p class="list-title">Invite tes proches</p>
@@ -305,18 +310,19 @@ function inviteBlock(cs, circle, alone) {
       <button class="cta" data-action="circle-share">Inviter par lien</button>
       <div class="invite-links">
         <button class="link-btn" data-action="circle-copy">${cs.copied ? '✓ Lien copié' : 'Copier le lien'}</button>
+        <button class="link-btn" data-action="circle-qr">${cs.showQr ? 'Masquer le QR' : 'QR code'}</button>
         <button class="link-btn" data-action="circle-show-code">${cs.showCode ? 'Masquer le code' : 'Afficher le code'}</button>
       </div>
-      ${code}
+      ${qr}${code}
     </section>`;
   }
   return `<section class="invite-row rise">
       <button class="ir-main" data-action="circle-share">
-        <span class="ir-plus" aria-hidden="true">${icon.plus(20)}</span>
         <span class="ir-text"><b>Inviter un proche</b><small>Un lien, et il rejoint en un geste</small></span>
       </button>
+      <button class="icon-btn ${cs.showQr ? 'on' : ''}" data-action="circle-qr" aria-label="${cs.showQr ? 'Masquer le QR code' : 'Afficher le QR code'}" aria-pressed="${!!cs.showQr}">${icon.qr(20)}</button>
       <button class="icon-btn" data-action="circle-copy" aria-label="Copier le lien">${cs.copied ? icon.check(20) : icon.copy(20)}</button>
-    </section>${code}`;
+    </section>${qr}${code}`;
 }
 
 export function circleView(c) {

@@ -30,7 +30,7 @@ const ui = {
   iosHint: /iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone,
   ob: { step: 0, name: '', goal: 5 },
   // Le cercle de proches : formulaire ouvert, dernier état connu du serveur.
-  circle: { form: null, busy: false, loading: false, error: '', members: [], events: [], at: 0, name: '', cname: '', code: '', invited: false, showCode: false, copied: false, preview: null },
+  circle: { form: null, busy: false, loading: false, error: '', members: [], events: [], at: 0, name: '', cname: '', code: '', invited: false, showCode: false, showQr: false, copied: false, preview: null },
 };
 let session = null;
 let installEvent = null;
@@ -946,7 +946,7 @@ const actions = {
     // Sans synchronisation, ma fiche disparaît du cercle (au mieux). Avec elle, mes autres appareils restent dans le cercle.
     if (state.circle && !state.sync) await leaveCircle(state, { force: true }).catch(() => {});
     state = reset();
-    Object.assign(ui.circle, { form: null, members: [], events: [], at: 0, error: '', showCode: false, invited: false, name: '', cname: '', code: '' });
+    Object.assign(ui.circle, { form: null, members: [], events: [], at: 0, error: '', showCode: false, showQr: false, invited: false, name: '', cname: '', code: '' });
     applyTheme();
     ui.tab = 'home';
     ui.ob = { step: 0, name: '', goal: 5 };
@@ -1008,7 +1008,7 @@ const actions = {
     render({ animate: false, keepScroll: true });
     try {
       await createCircle(state, { name: cs.name, circleName: cs.cname }, dayKey());
-      Object.assign(cs, { form: null, members: [], events: [], at: 0, showCode: false });
+      Object.assign(cs, { form: null, members: [], events: [], at: 0, showCode: false, showQr: false });
       circleChanged();
       cs.busy = false;
       await refreshCircle({ force: true });
@@ -1027,7 +1027,7 @@ const actions = {
     render({ animate: false, keepScroll: true });
     try {
       await joinCircle(state, cs.code, { name: cs.name }, dayKey());
-      Object.assign(cs, { form: null, members: [], events: [], at: 0, invited: false, showCode: false });
+      Object.assign(cs, { form: null, members: [], events: [], at: 0, invited: false, showCode: false, showQr: false });
       circleChanged();
       cs.busy = false;
       await refreshCircle({ force: true });
@@ -1076,6 +1076,15 @@ const actions = {
   'circle-show-code'() {
     ui.circle.showCode = !ui.circle.showCode;
     render({ animate: false, keepScroll: true });
+  },
+  'circle-qr'() {
+    ui.circle.showQr = !ui.circle.showQr;
+    render({ animate: false, keepScroll: true });
+    const box = ui.circle.showQr ? view.querySelector('.qr-box') : null;
+    if (box) {
+      box.classList.add('open-in'); // il apparaît en douceur, seulement quand on l'ouvre
+      box.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' }); // et se place en vue, au-dessus de la barre du bas
+    }
   },
   async 'circle-sign'(el) {
     if (!state.circle) return;
@@ -1127,7 +1136,7 @@ const actions = {
       if (!force) return;
       await leaveCircle(state, { force: true });
     }
-    Object.assign(ui.circle, { members: [], events: [], at: 0, form: null, showCode: false, error: '' });
+    Object.assign(ui.circle, { members: [], events: [], at: 0, form: null, showCode: false, showQr: false, error: '' });
     circleChanged();
     render({ animate: false, keepScroll: true });
   },
