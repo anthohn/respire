@@ -12,7 +12,7 @@ import { pipSupported } from './pip.js';
 import { Aura, readPalette } from './aura.js';
 import {
   createCircle, joinCircle, publish as publishCircle, fetchCircle, sendSign, ackEvents, leaveCircle, parseInvite, inviteLink,
-  parseStatus, peekCircle, circleSeries, seriesLine, withMe, CircleError, CIRCLE_MESSAGES, formatCode as formatCircleCode, normalizeCode as normalizeCircleCode,
+  parseStatus, peekCircle, circleSeries, seriesLine, withMe, cleanName, releaseIdentity, CircleError, CIRCLE_MESSAGES, formatCode as formatCircleCode, normalizeCode as normalizeCircleCode,
 } from './circle.js';
 import { syncNow, enableSync, joinWithCode, deleteRemote, normalizeCode, formatCode, SyncError, SYNC_MESSAGES } from './sync.js';
 
@@ -499,8 +499,11 @@ async function loadPreview() {
 }
 
 function rerenderPreview() {
-  const slot = view.querySelector('[data-slot="circle-preview"]');
-  if (slot) slot.innerHTML = circlePreviewView(ui.circle);
+  // L'aperçu peut se trouver dans la page et dans l'écran d'arrivée : on met les deux à jour.
+  const name = !obEl.hidden && ui.ob.mode === 'invite' ? ui.ob.name : cleanName(state.name) || ui.circle.name;
+  document.querySelectorAll('[data-slot="circle-preview"]').forEach((slot) => {
+    slot.innerHTML = circlePreviewView(ui.circle, name);
+  });
 }
 
 /** Un lien d'invitation (…#cercle=code) ouvre directement l'écran « rejoindre ». */
@@ -671,12 +674,12 @@ function showOnboarding() {
 }
 
 function renderOnboarding() {
-  obEl.innerHTML = onboardingView(ui.ob);
+  obEl.innerHTML = onboardingView(ui.ob, ui.circle);
 }
 
 function finishOnboarding() {
   state.onboarded = true;
-  state.name = ui.ob.name.trim();
+  state.name = cleanName(ui.ob.name);
   state.settings.goalMin = ui.ob.goal;
   if (ui.circle.form === 'join' && !ui.circle.name) ui.circle.name = state.name; // arrivé par une invitation : le prénom est déjà là
   touchPrefs();
@@ -755,14 +758,23 @@ function syncFailure(e) {
   return e instanceof SyncError ? SYNC_MESSAGES[e.code] || SYNC_MESSAGES.server : SYNC_MESSAGES.server;
 }
 
+/** La synchronisation a pu remplacer mon identité de cercle : l'ancienne fiche est retirée, et le cercle se recharge. */
+function afterSync(abandoned = []) {
+  if (!abandoned.length) return;
+  abandoned.forEach((c) => releaseIdentity(c));
+  Object.assign(ui.circle, { members: [], events: [], at: 0, showCode: false, showQr: false });
+  if (state.circle) setTimeout(() => refreshCircle({ silent: true, force: true }), 600);
+}
+
 async function runSync({ manual = false } = {}) {
   if (!state.sync || ui.sync.busy) return;
   ui.sync.busy = true;
   ui.sync.error = '';
   refreshSettings();
   try {
-    const { changed } = await syncNow(state);
+    const { changed, abandoned } = await syncNow(state);
     save(state);
+    afterSync(abandoned);
     if (changed) render({ animate: false, keepScroll: true });
     if (manual) toast(changed ? 'Données mises à jour' : 'Tout est à jour');
   } catch (e) {
@@ -860,8 +872,9 @@ const actions = {
     ui.sync.error = '';
     refreshSettings();
     try {
-      await joinWithCode(state, ui.sync.draft);
+      const { abandoned } = await joinWithCode(state, ui.sync.draft);
       save(state);
+      afterSync(abandoned);
       ui.sync.entering = false;
       ui.sync.draft = '';
       toast('Synchronisation activée');
@@ -974,6 +987,66 @@ const actions = {
     renderOnboarding();
   },
   'ob-finish': () => finishOnboarding(),
+  async 'ob-join'() {
+    const ob = ui.ob;
+    if (ob.busy) return;
+    const name = cleanName(ob.name);
+    if (!name) {
+      ob.error = 'Indique ton prénom pour que tes proches te reconnaissent.';
+      renderOnboarding();
+      return;
+    }
+    Object.assign(ob, { busy: true, error: '' });
+    renderOnboarding();
+    try {
+      await joinCircle(state, ui.circle.code, { name }, dayKey()); // crée aussi le profil : le prénom est le même partout
+      state.onboarded = true;
+      state.settings.goalMin = ob.goal || state.settings.goalMin;
+      Object.assign(ui.circle, { form: null, members: [], events: [], at: 0, invited: false, showCode: false, showQr: false, name: '' });
+      ui.tab = 'circle';
+      circleChanged();
+      obEl.classList.remove('open');
+      setTimeout(() => {
+        obEl.hidden = true;
+        obEl.innerHTML = '';
+      }, reduceMotion ? 0 : 400);
+      render();
+      toast('Bienvenue dans le cercle !');
+      refreshCircle({ force: true });
+    } catch (e) {
+      ob.error = circleMessage(e);
+    }
+    ob.busy = false;
+    if (!obEl.hidden && ob.mode === 'invite') renderOnboarding();
+  },
+  'ob-skip'() {
+    Object.assign(ui.ob, { mode: '', step: 0, error: '' }); // l'accueil habituel ; l'invitation reste là, à rejoindre ensuite
+    renderOnboarding();
+  },
+  'ob-here'() {
+    ui.ob.ios = false;
+    renderOnboarding();
+  },
+  async 'ob-copy-code'() {
+    try {
+      await navigator.clipboard.writeText(ui.circle.code);
+      ui.ob.copied = true;
+    } catch {
+      toast('Copie le code à la main : il est affiché au-dessus.');
+    }
+    renderOnboarding();
+  },
+  async 'circle-paste'() {
+    try {
+      const code = parseInvite(await navigator.clipboard.readText());
+      if (!code) throw new Error('rien');
+      Object.assign(ui.circle, { code: formatCircleCode(code), error: '' });
+      render({ animate: false, keepScroll: true });
+      loadPreview();
+    } catch {
+      toast('Rien à coller : copie d’abord le code ou le lien reçu.');
+    }
+  },
   feeling(el) {
     const rec = state.sessions.find((s) => s.id === lastSessionId);
     if (!rec) return;
@@ -1007,7 +1080,7 @@ const actions = {
     cs.error = '';
     render({ animate: false, keepScroll: true });
     try {
-      await createCircle(state, { name: cs.name, circleName: cs.cname }, dayKey());
+      await createCircle(state, { name: cleanName(state.name) || cs.name, circleName: cs.cname }, dayKey());
       Object.assign(cs, { form: null, members: [], events: [], at: 0, showCode: false, showQr: false });
       circleChanged();
       cs.busy = false;
@@ -1026,7 +1099,7 @@ const actions = {
     cs.error = '';
     render({ animate: false, keepScroll: true });
     try {
-      await joinCircle(state, cs.code, { name: cs.name }, dayKey());
+      await joinCircle(state, cs.code, { name: cleanName(state.name) || cs.name }, dayKey());
       Object.assign(cs, { form: null, members: [], events: [], at: 0, invited: false, showCode: false, showQr: false });
       circleChanged();
       cs.busy = false;
@@ -1214,7 +1287,7 @@ document.addEventListener('change', (e) => {
 document.addEventListener('input', (e) => {
   const t = e.target;
   if (t.dataset.input === 'name') {
-    state.name = t.value.trim();
+    state.name = cleanName(t.value); // le même prénom que dans le cercle
     touchPrefs();
     save(state);
     scheduleSync();
@@ -1238,6 +1311,7 @@ document.addEventListener('input', (e) => {
     loadPreview();
   } else if (t.dataset.input === 'ob-name') {
     ui.ob.name = t.value;
+    if (ui.ob.mode === 'invite') rerenderPreview(); // prévient si quelqu'un porte déjà ce prénom dans le cercle
   }
 });
 
@@ -1309,7 +1383,9 @@ window.addEventListener('hashchange', () => {
   render();
 });
 if (!state.onboarded) {
-  ui.ob = { step: 0, name: state.name, goal: state.settings.goalMin };
+  // Arrivé par une invitation sans profil : un seul écran (prénom, puis on rejoint). Sur iPhone dans Safari, on guide d'abord vers l'application.
+  const invited = ui.circle.invited && ui.circle.form === 'join';
+  ui.ob = { step: 0, name: state.name, goal: state.settings.goalMin, mode: invited ? 'invite' : '', ios: invited && ui.ios && !navigator.standalone, error: '', busy: false, copied: false };
   showOnboarding();
 }
 

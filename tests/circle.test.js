@@ -389,3 +389,37 @@ test('fantômes : une fiche d’une ancienne version (sans les 28 jours) n’est
   p.status.acts = ''; // ancienne application : seulement la semaine en cours
   assert.equal(viewOf(p.status, TODAY).paused, false, 'on ne sait pas : on ne l’écarte pas');
 });
+
+import { releaseIdentity } from '../js/circle.js';
+
+test('synchronisation : l’identité de cercle remplacée est retirée du serveur (pas de fiche fantôme)', async () => {
+  installServer();
+  // Léa sur son téléphone crée le cercle ; sur sa tablette, elle a rejoint le même cercle de son côté : deux fiches.
+  const phoneA = phone('Léa', [0]);
+  await createCircle(phoneA, { name: 'Léa', circleName: 'La famille' }, TODAY);
+  const tablet = phone('Léa', [0]);
+  await joinCircle(tablet, phoneA.circle.code, { name: 'Léa' }, TODAY);
+  assert.equal((await fetchCircle(phoneA)).members.length, 2, 'une fiche en double');
+  // Elle synchronise : la tablette adopte l'identité du téléphone et rend la sienne.
+  const merged = buildPayload({ ...phoneA, prefsAt: 500 });
+  const { abandoned } = applyPayload(tablet, merged);
+  assert.equal(abandoned.mid !== phoneA.circle.mid, true);
+  assert.equal(tablet.circle.mid, phoneA.circle.mid);
+  await releaseIdentity(abandoned);
+  const members = (await fetchCircle(phoneA)).members;
+  assert.equal(members.length, 1, 'plus qu’une fiche');
+  assert.equal(members[0].mid, phoneA.circle.mid);
+  // Rien à retirer quand on garde la même identité
+  assert.equal(applyPayload(tablet, merged).abandoned, null);
+  // Un hors-ligne ne casse rien
+  await releaseIdentity({ code: phoneA.circle.code, mid: 'f'.repeat(16), key: 'e'.repeat(64) });
+});
+
+import { sameName } from '../js/circle.js';
+
+test('doublons : deux prénoms se ressemblent sans tenir compte des accents ni des majuscules', () => {
+  assert.equal(sameName('Léa', 'lea'), true);
+  assert.equal(sameName(' ÉLISE ', 'Elise'), true);
+  assert.equal(sameName('Paul', 'Pauline'), false);
+  assert.equal(sameName('', ''), false, 'deux vides ne se ressemblent pas');
+});

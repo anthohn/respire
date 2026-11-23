@@ -10,7 +10,7 @@ import { journeyLayout, STEPS } from './journey.js';
 import { GUIDE_STYLES } from './track.js';
 import { formatCode } from './sync.js';
 import { qrSvg } from './qr.js';
-import { memberView, sortMembers, canSend, SIGNS, MAX_MEMBERS, circleSeries, weekOverview, missingText, todayLine, withMe, inviteLink } from './circle.js';
+import { memberView, sortMembers, canSend, SIGNS, MAX_MEMBERS, circleSeries, weekOverview, missingText, todayLine, withMe, inviteLink, cleanName, sameName } from './circle.js';
 
 export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
@@ -228,7 +228,7 @@ export function circleCardView(c) {
 }
 
 /** Ce que l'on trouve derrière le code : le cercle et ses membres (ou la raison pour laquelle le code ne marche pas). */
-export function circlePreviewView(cs) {
+export function circlePreviewView(cs, name = '') {
   const p = cs.preview;
   if (!p) return '';
   if (p.loading) return '<p class="circle-preview muted">Recherche du cercle…</p>';
@@ -237,7 +237,7 @@ export function circlePreviewView(cs) {
   return `<div class="circle-preview found">
     <span class="avatars" aria-hidden="true">${p.names.slice(0, 4).map((n, i) => `<span class="avatar" style="--h:${(i * 83 + 40) % 360}">${initialOf(n)}</span>`).join('')}</span>
     <p><b>${esc(p.cn || 'Un cercle de proches')}</b>${names ? `<small>${esc(names)}</small>` : ''}${p.full ? '<small class="err-text">Ce cercle est complet.</small>' : ''}</p>
-  </div>`;
+  </div>${p.names.some((n) => sameName(n, name)) ? `<p class="fine warn" role="status">Quelqu’un s’appelle déjà ${esc(p.names.find((n) => sameName(n, name)))} dans ce cercle. Si c’est toi, sur un autre appareil, ouvre Respire là-bas plutôt que de rejoindre une seconde fois.</p>` : ''}`;
 }
 
 const STATE_TEXT = {
@@ -261,6 +261,16 @@ function memberAction(m, v, c) {
   const kind = v.state === 'done' ? 'cheer' : 'nudge';
   const sent = !canSend(c.state.circle, m.mid, kind, c.today);
   return `<button class="btn small ghost m-action" data-action="circle-sign" data-mid="${m.mid}" data-kind="${kind}" ${sent ? 'disabled' : ''}>${sent ? '✓ Envoyé' : `${SIGNS[kind].emoji} ${SIGNS[kind].label}`}</button>`;
+}
+
+/** Un seul prénom, partout : celui du profil. On ne le redemande que s'il n'y en a pas encore. */
+function whoField(state, cs) {
+  if (cleanName(state.name)) {
+    return `<p class="who">Tu apparaîtras sous le prénom <b>${esc(cleanName(state.name))}</b>. <button type="button" class="link-btn small" data-action="tab" data-tab="settings">Changer</button></p>`;
+  }
+  return `<label class="field"><span>Ton prénom</span>
+        <input class="text-input wide" type="text" maxlength="24" autocomplete="given-name" placeholder="Ton prénom" value="${esc(cs.name)}" data-input="circle-name" />
+      </label>`;
 }
 
 function memberRow(m, c) {
@@ -341,9 +351,7 @@ export function circleView(c) {
     <form class="card circle-form rise" data-form="circle-create" novalidate>
       <h2>Créer un cercle</h2>
       <p class="muted">Tu recevras un lien à envoyer à tes proches. Jusqu’à ${MAX_MEMBERS} personnes.</p>
-      <label class="field"><span>Ton prénom</span>
-        <input class="text-input wide" type="text" maxlength="24" autocomplete="given-name" placeholder="Ton prénom" value="${esc(cs.name)}" data-input="circle-name" />
-      </label>
+      ${whoField(state, cs)}
       <label class="field"><span>Nom du cercle <small>(facultatif)</small></span>
         <input class="text-input wide" type="text" maxlength="24" placeholder="La famille, les copains…" value="${esc(cs.cname)}" data-input="circle-cname" />
       </label>
@@ -356,14 +364,13 @@ export function circleView(c) {
     return `${head}
     <form class="card circle-form rise" data-form="circle-join" novalidate>
       <h2>${cs.invited ? 'Tu es invité' : 'Rejoindre un cercle'}</h2>
-      <div data-slot="circle-preview">${circlePreviewView(cs)}</div>
-      <p class="muted">${cs.invited ? 'Indique ton prénom pour que tes proches te reconnaissent.' : 'Saisis le code reçu de la personne qui t’invite.'}</p>
+      <div data-slot="circle-preview">${circlePreviewView(cs, cleanName(state.name) || cs.name)}</div>
+      <p class="muted">${cs.invited ? (cleanName(state.name) ? 'Tes proches te reconnaîtront à ton prénom.' : 'Indique ton prénom pour que tes proches te reconnaissent.') : 'Saisis le code reçu de la personne qui t’invite.'}</p>
       ${cs.invited ? '' : `<label class="field"><span>Code du cercle</span>
         <input class="text-input wide code-in" type="text" inputmode="numeric" autocomplete="off" placeholder="0000 0000 0000 0000" value="${esc(cs.code)}" data-input="circle-code" />
-      </label>`}
-      <label class="field"><span>Ton prénom</span>
-        <input class="text-input wide" type="text" maxlength="24" autocomplete="given-name" placeholder="Ton prénom" value="${esc(cs.name)}" data-input="circle-name" />
       </label>
+      <button class="link-btn paste" type="button" data-action="circle-paste">Coller le code copié</button>`}
+      ${whoField(state, cs)}
       ${err(cs.error)}
       <button class="cta" type="submit" ${cs.busy ? 'disabled' : ''}>${cs.busy ? 'Connexion…' : 'Rejoindre'}</button>
       <button class="link-btn" type="button" data-action="circle-cancel">Annuler</button>
@@ -634,7 +641,7 @@ export function settingsView(c) {
 
   <section class="card list rise">
     <label class="row stack">
-      <span class="row-text"><b>Prénom</b><small>Pour que l’accueil te salue</small></span>
+      <span class="row-text"><b>Prénom</b><small>L’accueil te salue ; c’est aussi celui que voit ton cercle.</small></span>
       <input class="text-input wide" type="text" inputmode="text" autocomplete="given-name" maxlength="24" placeholder="Ton prénom (optionnel)" value="${esc(state.name)}" data-input="name" />
     </label>
     <div class="row stack">
@@ -787,7 +794,39 @@ export function doneView(d) {
 
 // ---------- Présentation (première ouverture) ----------
 
-export function onboardingView(ob) {
+/** Arrivée par une invitation, sans profil : un seul écran. On demande le prénom, puis on crée le profil et on rejoint. */
+function inviteLanding(ob, cs) {
+  const preview = `<div data-slot="circle-preview">${circlePreviewView(cs, ob.name)}</div>`;
+  if (ob.ios) {
+    // iPhone : un lien s'ouvre dans Safari, qui n'a pas les données de l'application installée. On rejoint depuis l'application.
+    return `<div class="ob-card invite"><div class="ob-body">
+      ${preview}
+      <h1 class="ob-title small">Un geste avant de rejoindre</h1>
+      <p class="ob-text">Sur iPhone, ce lien s’ouvre dans Safari, pas dans ton application. Pour garder ton cercle et ta série, rejoins-le depuis l’application.</p>
+      <ul class="ob-points">
+        <li><span class="pt">1</span><div><b>Tu as déjà Respire ?</b><p>Copie le code ci-dessous, ouvre l’application, puis Cercle › J’ai une invitation › Coller.</p></div></li>
+        <li><span class="pt">2</span><div><b>Pas encore ?</b><p>Touche <b>Partager</b>, puis <b>Sur l’écran d’accueil</b>. Ouvre-la ensuite, et colle le code de la même façon.</p></div></li>
+      </ul>
+      <p class="code-box"><span class="code" aria-label="Code du cercle">${esc(cs.code)}</span></p>
+      <button class="cta" data-action="ob-copy-code">${ob.copied ? '✓ Code copié' : 'Copier le code'}</button>
+      <button class="link-btn" data-action="ob-here">Rejoindre ici quand même</button>
+    </div></div>`;
+  }
+  return `<div class="ob-card invite"><div class="ob-body">
+      ${preview}
+      <h1 class="ob-title small">Tu es invité</h1>
+      <label class="ob-field"><span>Comment t’appelles-tu ?</span>
+        <input class="text-input wide" type="text" maxlength="24" autocomplete="given-name" placeholder="Ton prénom" value="${esc(ob.name)}" data-input="ob-name" />
+      </label>
+      ${ob.error ? `<p class="fine err" role="alert">${esc(ob.error)}</p>` : ''}
+      <button class="cta" data-action="ob-join" ${ob.busy ? 'disabled' : ''}>${ob.busy ? 'Connexion…' : 'Rejoindre'}</button>
+      <p class="ob-note">Tes proches verront ton prénom, ta série et les jours où tu respires. Rien d’autre.</p>
+      <button class="link-btn" data-action="ob-skip">Plus tard</button>
+    </div></div>`;
+}
+
+export function onboardingView(ob, cs) {
+  if (ob.mode === 'invite') return inviteLanding(ob, cs);
   const dots = [0, 1, 2].map((i) => `<i class="${i === ob.step ? 'on' : ''}"></i>`).join('');
   let body = '';
   if (ob.step === 0) {

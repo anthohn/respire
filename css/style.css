@@ -1163,3 +1163,18 @@ body.in-session .tabbar { opacity: 0; visibility: hidden; transform: translate(-
 .qr-box .fine { margin: 0; text-align: center; }
 @keyframes qr-in { from { opacity: 0; transform: translateY(8px) scale(0.97); } }
 .qr-box.open-in { animation: qr-in 0.45s var(--ease); }
+
+/* « Tu apparaîtras sous le prénom Marie. Changer » : le prénom du profil, partout. */
+.circle-form .who { margin: 0; color: var(--muted); font-weight: 600; }
+.circle-form .who b { color: var(--ink); }
+.circle-form .who .link-btn { min-height: 32px; padding: 0 10px; margin-left: 2px; font-size: 14px; vertical-align: baseline; }
+
+/* Arrivée par une invitation : un seul écran, sans les trois pages de présentation. */
+.ob-card.invite { min-height: 0; justify-content: center; }
+.ob-card.invite .ob-body { justify-content: center; gap: 18px; }
+.ob-card.invite .circle-preview { justify-content: center; text-align: left; }
+.ob-card.invite .ob-text { max-width: 34ch; }
+.ob-card.invite .ob-points { text-align: left; }
+.ob-card.invite .code-box { width: 100%; margin: 0; }
+.fine.warn { color: var(--warm-2); text-align: left; }
+.circle-form .paste { align-self: flex-start; min-height: 36px; padding: 0 10px; font-size: 14px; margin-top: -4px; }

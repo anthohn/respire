@@ -147,7 +147,9 @@ export function mergePayloads(a, b) {
 
 export const samePayload = (a, b) => JSON.stringify(normalize(a)) === JSON.stringify(normalize(b));
 
+/** Applique une fusion à cet appareil. Renvoie l'identité de cercle abandonnée au passage, s'il y en a une (à retirer du serveur). */
 export function applyPayload(state, p) {
+  let abandoned = null;
   state.name = p.prefs.name || '';
   state.settings.goalMin = p.prefs.goalMin ?? state.settings.goalMin;
   state.settings.presetId = getPreset(p.prefs.presetId ?? state.settings.presetId).id;
@@ -155,12 +157,15 @@ export function applyPayload(state, p) {
   if ('circle' in p.prefs) {
     const incoming = sanitizeCircle(p.prefs.circle);
     const same = incoming && state.circle && incoming.code === state.circle.code && incoming.mid === state.circle.mid;
+    // L'identité qu'on remplace ne servira plus nulle part : à retirer du serveur, sinon c'est une fiche fantôme.
+    if (state.circle && !same) abandoned = { code: state.circle.code, mid: state.circle.mid, key: state.circle.key };
     // Même cercle : on garde ce qui est propre à cet appareil (signes envoyés, cache). Sinon, on adopte (ou on quitte).
     state.circle = same ? { ...state.circle, cn: incoming.cn } : incoming;
   }
   state.prefsAt = p.prefsAt;
   state.onboarded = state.onboarded || p.onboarded;
   state.sessions = p.sessions;
+  return { abandoned };
 }
 
 // ---------- Réseau ----------
@@ -196,9 +201,10 @@ function checkStatus(status) {
  */
 export async function syncNow(state) {
   const sync = state.sync;
-  if (!sync?.code) return { changed: false };
+  if (!sync?.code) return { changed: false, abandoned: [] };
   const { id, key } = await deriveKeys(sync.code);
   let changed = false;
+  const abandoned = []; // identités de cercle remplacées par la fusion
 
   for (let attempt = 0; attempt < 4; attempt++) {
     const got = await call({ op: 'get', id });
@@ -209,20 +215,21 @@ export async function syncNow(state) {
     const remotePayload = remote ? await decryptPayload(key, remote.blob) : null;
     const merged = remotePayload ? mergePayloads(local, remotePayload) : local;
     if (!samePayload(merged, local)) {
-      applyPayload(state, merged);
+      const r = applyPayload(state, merged);
+      if (r.abandoned) abandoned.push(r.abandoned);
       changed = true;
     }
     if (remotePayload && samePayload(merged, remotePayload)) {
       sync.rev = remote.rev;
       sync.lastSync = Date.now();
-      return { changed };
+      return { changed, abandoned };
     }
 
     const put = await call({ op: 'put', id, rev: remote?.rev ?? 0, blob: await encryptPayload(key, merged) });
     if (put.status === 200) {
       sync.rev = put.data.rev;
       sync.lastSync = Date.now();
-      return { changed };
+      return { changed, abandoned };
     }
     if (put.status === 409) continue; // un autre appareil a écrit entre-temps : on recommence avec sa version
     if (put.status === 413) throw new SyncError('too_large');
