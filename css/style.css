@@ -700,6 +700,10 @@ body.in-session .tabbar { opacity: 0; visibility: hidden; transform: translate(-
 .rdot:focus-visible, .rz-arrow:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
 
 /* Chaque rythme a sa couleur ; « Expiration longue » garde celle du moment de la journée. */
+.rhythm[data-rhythm='long8'] {
+  --a2: #bfe3ff; --v1: #1b5fd0; --v2: #2a8fd9; --v3: #1fb3c9; --v4: #3a4fd6; --v5: #7fd0ff; --core1: #2f7be6; --core2: #86d8ff;
+  --accent: var(--core1); --accent-2: var(--core2);
+}
 .rhythm[data-rhythm='coherence'] {
   --a2: #b9f0e6; --v1: #1f9fd0; --v2: #2fc7b8; --v3: #5be3c4; --v4: #4aa8ff; --v5: #9ff0dc; --core1: #28b4d4; --core2: #7ff0e0;
   --accent: var(--core1); --accent-2: var(--core2);

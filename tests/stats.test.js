@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addDays, streakInfo, weekKeys, levelInfo, earnedBadgeIds, buildStats, formatDuration, formatClock } from '../js/stats.js';
-import { PRESETS, sessionPlan, phaseAt, cycleLength, getPreset } from '../js/breath.js';
+import { PRESETS, sessionPlan, phaseAt, cycleLength, getPreset, patternLabel } from '../js/breath.js';
 
 const TODAY = '2026-11-19'; // jeudi
 const s = (date, seconds = 300) => ({ date, seconds });
@@ -168,8 +168,9 @@ test('une session compte toujours pour la série (au moins 60 s), quel que soit 
   assert.deepEqual(sessionPlan(PRESETS.find((x) => x.id === '478'), 1), { cycles: 4, totalSeconds: 76 });
 });
 
-test('rythmes : 4 au choix, et un rythme retiré retombe sur le recommandé', () => {
-  assert.deepEqual(PRESETS.map((p) => p.id), ['long', 'coherence', 'calm', '478']);
+test('rythmes : 5 au choix, et un rythme retiré retombe sur le recommandé', () => {
+  assert.deepEqual(PRESETS.map((p) => p.id), ['long', 'long8', 'coherence', 'calm', '478']);
+  assert.equal(PRESETS.filter((p) => p.recommended).length, 1, 'un seul rythme recommandé : 4 · 6');
   assert.equal(getPreset('first').id, 'long', 'ancien réglage « Premiers pas »');
   assert.equal(getPreset(undefined).id, 'long');
   assert.equal(getPreset('478').id, '478');
@@ -246,4 +247,18 @@ test('durée libre : pas de fin, un choix de plus à côté des durées', () => 
   const plan = sessionPlan(PRESETS.find((p) => p.id === 'long'), UNLIMITED);
   assert.equal(plan.totalSeconds, Infinity);
   assert.equal(plan.cycles, Infinity);
+});
+
+test('rythme « expiration très longue » : 4 · 8, cycle de 12 s, la séance finit sur une expiration complète', () => {
+  const p = PRESETS.find((x) => x.id === 'long8');
+  assert.deepEqual([p.inhale, p.hold1, p.exhale, p.hold2], [4, 0, 8, 0]);
+  assert.equal(p.exhale, 2 * p.inhale, 'l’expiration dure le double de l’inspiration');
+  assert.deepEqual(sessionPlan(p, 1), { cycles: 5, totalSeconds: 60 });
+  assert.deepEqual(sessionPlan(p, 5), { cycles: 25, totalSeconds: 300 });
+  assert.deepEqual(sessionPlan(p, 60), { cycles: 300, totalSeconds: 3600 });
+  assert.equal(phaseAt(p, 3.9).phase, 'inhale');
+  assert.equal(phaseAt(p, 4.1).phase, 'exhale');
+  assert.equal(phaseAt(p, 11.9).phase, 'exhale');
+  assert.equal(phaseAt(p, 12.1).phase, 'inhale', 'le cycle recommence');
+  assert.equal(patternLabel(p), '4 · 8');
 });

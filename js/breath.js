@@ -9,6 +9,12 @@ export const PRESETS = [
     recommended: true,
   },
   {
+    id: 'long8',
+    name: 'Expiration très longue',
+    tagline: 'Quand 4 · 6 devient facile : l’expiration dure le double',
+    inhale: 4, hold1: 0, exhale: 8, hold2: 0,
+  },
+  {
     id: 'coherence',
     name: 'Cohérence',
     tagline: 'Régulier et apaisant',
