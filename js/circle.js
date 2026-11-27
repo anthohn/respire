@@ -55,13 +55,13 @@ export function parseInvite(text) {
   return normalizeCode(m ? m[1] : t);
 }
 
+export const cleanName = (value) => String(value ?? '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, NAME_MAX);
+
 /** Deux prénoms qui se ressemblent (sans tenir compte des majuscules ni des accents) : pour prévenir d'un doublon. */
 export const sameName = (a, b) => {
-  const n = (v) => String(v ?? '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+  const n = (v) => cleanName(v).normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
   return !!n(a) && n(a) === n(b);
 };
-
-export const cleanName = (value) => String(value ?? '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, NAME_MAX);
 
 // ---------- Statut partagé ----------
 
@@ -318,14 +318,7 @@ export async function publish(state, today, { force = false } = {}) {
  * Retire du serveur une identité qu'on n'utilise plus (la synchronisation l'a remplacée par celle d'un autre appareil) :
  * sinon elle resterait comme une fiche fantôme. Sans réseau, tant pis : le serveur l'efface seul après 45 jours.
  */
-export async function releaseIdentity(c) {
-  try {
-    const { id } = await deriveKeys(c.code, SALT);
-    await call({ op: 'leave', id, mid: c.mid, key: c.key });
-  } catch {
-    /* hors connexion : la fiche muette finira par disparaître */
-  }
-}
+export const releaseIdentity = (c) => leaveCircle({ circle: c }, { force: true }).catch(() => {});
 
 /** Récupère le cercle : les membres (statuts déchiffrés et vérifiés) et les signes reçus. */
 export async function fetchCircle(state) {

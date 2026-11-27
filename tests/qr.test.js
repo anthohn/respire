@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { qrMatrix, qrSvg } from '../js/qr.js';
-import { inviteLink, parseInvite } from '../js/circle.js';
+import { inviteLink } from '../js/circle.js';
 
 const LINK = inviteLink('3162858841128824', 'https://respire-theta.vercel.app/');
 
@@ -47,8 +47,4 @@ test('QR code : le SVG reproduit exactement la matrice, avec sa zone de silence'
   assert.deepEqual(drawn, m);
   // Sombre sur clair, quel que soit le thème.
   assert.ok(svg.includes('fill="#ffffff"') && svg.includes('fill="#0b1020"'));
-});
-
-test('QR code : il encode le lien d’invitation, que parseInvite sait relire', () => {
-  assert.equal(parseInvite(LINK), '3162858841128824');
 });

@@ -1114,7 +1114,7 @@ body.in-session .tabbar { opacity: 0; visibility: hidden; transform: translate(-
 
 /* Invitation en une ligne */
 .invite-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 8px 8px 8px 12px; border-radius: 28px; background: var(--glass); border: 1px solid var(--hair); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
-.ir-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 4px; text-align: left; }
+.ir-main { flex: 1; min-width: 0; display: flex; align-items: center; padding: 4px; text-align: left; }
 .ir-text { display: flex; flex-direction: column; min-width: 0; }
 .ir-text b { font-size: 15.5px; }
 .ir-text small { color: var(--muted); font-weight: 600; font-size: 13px; }
@@ -1178,7 +1178,6 @@ body.in-session .tabbar { opacity: 0; visibility: hidden; transform: translate(-
 .ob-card.invite .ob-body { justify-content: center; gap: 18px; }
 .ob-card.invite .circle-preview { justify-content: center; text-align: left; }
 .ob-card.invite .ob-text { max-width: 34ch; }
-.ob-card.invite .ob-points { text-align: left; }
 .ob-card.invite .code-box { width: 100%; margin: 0; }
-.fine.warn { color: var(--warm-2); text-align: left; }
+.fine.warn { color: var(--warm-2); }
 .circle-form .paste { align-self: flex-start; min-height: 36px; padding: 0 10px; font-size: 14px; margin-top: -4px; }

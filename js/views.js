@@ -234,10 +234,11 @@ export function circlePreviewView(cs, name = '') {
   if (p.loading) return '<p class="circle-preview muted">Recherche du cercle…</p>';
   if (p.error) return `<p class="fine err" role="alert">${esc(p.error)}</p>`;
   const names = p.names.length ? joinNames(p.names.slice(0, 4)) + (p.names.length > 4 ? ` et ${p.names.length - 4} autre${p.names.length - 4 > 1 ? 's' : ''}` : '') : '';
+  const twin = p.names.find((n) => sameName(n, name)); // un prénom déjà pris dans ce cercle
   return `<div class="circle-preview found">
     <span class="avatars" aria-hidden="true">${p.names.slice(0, 4).map((n, i) => `<span class="avatar" style="--h:${(i * 83 + 40) % 360}">${initialOf(n)}</span>`).join('')}</span>
     <p><b>${esc(p.cn || 'Un cercle de proches')}</b>${names ? `<small>${esc(names)}</small>` : ''}${p.full ? '<small class="err-text">Ce cercle est complet.</small>' : ''}</p>
-  </div>${p.names.some((n) => sameName(n, name)) ? `<p class="fine warn" role="status">Quelqu’un s’appelle déjà ${esc(p.names.find((n) => sameName(n, name)))} dans ce cercle. Si c’est toi, sur un autre appareil, ouvre Respire là-bas plutôt que de rejoindre une seconde fois.</p>` : ''}`;
+  </div>${twin ? `<p class="fine left warn" role="status">Quelqu’un s’appelle déjà ${esc(twin)} dans ce cercle. Si c’est toi, sur un autre appareil, ouvre Respire là-bas plutôt que de rejoindre une seconde fois.</p>` : ''}`;
 }
 
 const STATE_TEXT = {

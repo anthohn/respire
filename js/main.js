@@ -525,6 +525,11 @@ function checkInvite() {
   loadPreview();
 }
 
+/** L'appartenance au cercle change (créé, rejoint, quitté, identité remplacée) : on oublie ce qui s'affichait ; `extra` règle le reste. */
+function resetCircleView(extra = {}) {
+  Object.assign(ui.circle, { members: [], events: [], at: 0, showCode: false, showQr: false, ...extra });
+}
+
 /** Une action du cercle qui change l'appartenance : on l'enregistre, et elle suit la synchronisation. */
 function circleChanged() {
   touchPrefs();
@@ -759,10 +764,10 @@ function syncFailure(e) {
 }
 
 /** La synchronisation a pu remplacer mon identité de cercle : l'ancienne fiche est retirée, et le cercle se recharge. */
-function afterSync(abandoned = []) {
+function afterSync(abandoned) {
   if (!abandoned.length) return;
   abandoned.forEach((c) => releaseIdentity(c));
-  Object.assign(ui.circle, { members: [], events: [], at: 0, showCode: false, showQr: false });
+  resetCircleView();
   if (state.circle) setTimeout(() => refreshCircle({ silent: true, force: true }), 600);
 }
 
@@ -959,7 +964,7 @@ const actions = {
     // Sans synchronisation, ma fiche disparaît du cercle (au mieux). Avec elle, mes autres appareils restent dans le cercle.
     if (state.circle && !state.sync) await leaveCircle(state, { force: true }).catch(() => {});
     state = reset();
-    Object.assign(ui.circle, { form: null, members: [], events: [], at: 0, error: '', showCode: false, showQr: false, invited: false, name: '', cname: '', code: '' });
+    resetCircleView({ form: null, error: '', invited: false, name: '', cname: '', code: '' });
     applyTheme();
     ui.tab = 'home';
     ui.ob = { step: 0, name: '', goal: 5 };
@@ -1000,17 +1005,9 @@ const actions = {
     renderOnboarding();
     try {
       await joinCircle(state, ui.circle.code, { name }, dayKey()); // crée aussi le profil : le prénom est le même partout
-      state.onboarded = true;
-      state.settings.goalMin = ob.goal || state.settings.goalMin;
-      Object.assign(ui.circle, { form: null, members: [], events: [], at: 0, invited: false, showCode: false, showQr: false, name: '' });
+      resetCircleView({ form: null, invited: false, name: '' });
       ui.tab = 'circle';
-      circleChanged();
-      obEl.classList.remove('open');
-      setTimeout(() => {
-        obEl.hidden = true;
-        obEl.innerHTML = '';
-      }, reduceMotion ? 0 : 400);
-      render();
+      finishOnboarding();
       toast('Bienvenue dans le cercle !');
       refreshCircle({ force: true });
     } catch (e) {
@@ -1081,7 +1078,7 @@ const actions = {
     render({ animate: false, keepScroll: true });
     try {
       await createCircle(state, { name: cleanName(state.name) || cs.name, circleName: cs.cname }, dayKey());
-      Object.assign(cs, { form: null, members: [], events: [], at: 0, showCode: false, showQr: false });
+      resetCircleView({ form: null });
       circleChanged();
       cs.busy = false;
       await refreshCircle({ force: true });
@@ -1100,7 +1097,7 @@ const actions = {
     render({ animate: false, keepScroll: true });
     try {
       await joinCircle(state, cs.code, { name: cleanName(state.name) || cs.name }, dayKey());
-      Object.assign(cs, { form: null, members: [], events: [], at: 0, invited: false, showCode: false, showQr: false });
+      resetCircleView({ form: null, invited: false });
       circleChanged();
       cs.busy = false;
       await refreshCircle({ force: true });
@@ -1209,7 +1206,7 @@ const actions = {
       if (!force) return;
       await leaveCircle(state, { force: true });
     }
-    Object.assign(ui.circle, { members: [], events: [], at: 0, form: null, showCode: false, showQr: false, error: '' });
+    resetCircleView({ form: null, error: '' });
     circleChanged();
     render({ animate: false, keepScroll: true });
   },
@@ -1385,7 +1382,7 @@ window.addEventListener('hashchange', () => {
 if (!state.onboarded) {
   // Arrivé par une invitation sans profil : un seul écran (prénom, puis on rejoint). Sur iPhone dans Safari, on guide d'abord vers l'application.
   const invited = ui.circle.invited && ui.circle.form === 'join';
-  ui.ob = { step: 0, name: state.name, goal: state.settings.goalMin, mode: invited ? 'invite' : '', ios: invited && ui.ios && !navigator.standalone, error: '', busy: false, copied: false };
+  ui.ob = { step: 0, name: state.name, goal: state.settings.goalMin, mode: invited ? 'invite' : '', ios: invited && ui.iosHint, error: '', busy: false, copied: false };
   showOnboarding();
 }
 

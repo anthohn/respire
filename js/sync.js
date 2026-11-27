@@ -197,7 +197,8 @@ function checkStatus(status) {
 
 /**
  * Récupère, fusionne, renvoie. Peut être appelée aussi souvent qu'on veut : si rien n'a changé, rien n'est écrit.
- * Renvoie { changed } : vrai si des données d'un autre appareil sont arrivées.
+ * Renvoie { changed, abandoned } : `changed` est vrai si des données d'un autre appareil sont arrivées ; `abandoned`
+ * liste les identités de cercle que cette fusion a remplacées (à libérer sur le serveur).
  */
 export async function syncNow(state) {
   const sync = state.sync;

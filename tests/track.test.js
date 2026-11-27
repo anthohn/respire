@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderTrack, trackPlan, wavBlob, convolve, GUIDE_STYLES, DEFAULT_GUIDE, TRACK_RATE, LEAD, TAIL } from '../js/track.js';
-import { PRESETS, phaseAt, cycleLength } from '../js/breath.js';
+import { renderTrack, trackPlan, wavBlob, convolve, loopCycles, GUIDE_STYLES, DEFAULT_GUIDE, TRACK_RATE, LEAD, TAIL } from '../js/track.js';
+import { PRESETS, cycleLength, sessionPlan, DURATIONS, durationLabel } from '../js/breath.js';
 
+const STYLES = GUIDE_STYLES.map((g) => g.id);
 const preset = (id) => PRESETS.find((p) => p.id === id);
 const peakOf = (pcm) => pcm.reduce((m, v) => Math.max(m, Math.abs(v) / 32768), 0);
 // Niveau maximal d'une piste : 0,5 ; le bol a des frappes brèves, on lui laisse un peu plus de crête pour qu'il paraisse aussi fort que Repères.
@@ -14,18 +15,6 @@ const rmsAt = (pcm, rate, t, w = 0.1) => {
   for (let i = a; i < b; i++) s += (pcm[i] / 32768) ** 2;
   return Math.sqrt(s / Math.max(1, b - a));
 };
-const corr = (xs, ys) => {
-  const n = xs.length;
-  const mx = xs.reduce((a, b) => a + b, 0) / n;
-  const my = ys.reduce((a, b) => a + b, 0) / n;
-  let sxy = 0, sxx = 0, syy = 0;
-  for (let i = 0; i < n; i++) {
-    sxy += (xs[i] - mx) * (ys[i] - my);
-    sxx += (xs[i] - mx) ** 2;
-    syy += (ys[i] - my) ** 2;
-  }
-  return sxy / Math.sqrt(sxx * syy);
-};
 
 test('piste : plan = installation + respirations + retombée', () => {
   const p = preset('long');
@@ -36,7 +25,7 @@ test('piste : plan = installation + respirations + retombée', () => {
   assert.equal(trackPlan(p, 5, { cycles: 2, lead: 1, tail: 2 }).total, 1 + 20 + 2);
 });
 
-for (const style of GUIDE_STYLES.map((g) => g.id)) {
+for (const style of STYLES) {
   test(`piste « ${style} » : bonne durée, discrète, sans claquement, silencieuse aux extrémités`, async () => {
     const p = preset('long');
     const { pcm, rate, plan } = await renderTrack({ preset: p, cycles: 4, style });
@@ -111,16 +100,13 @@ test('piste : fichier WAV valide', async () => {
   assert.ok(cycleLength(preset('long')) === 10);
 });
 
-import { loopCycles } from '../js/track.js';
-
-for (const style of GUIDE_STYLES.map((g) => g.id)) {
+for (const style of STYLES) {
   test(`piste en boucle « ${style} » : un nombre rond de cycles, sans installation, et la jonction est invisible`, async () => {
     const p = preset('long');
     const { pcm, rate, plan } = await renderTrack({ preset: p, style, loop: true });
     assert.equal(plan.loop, true);
     assert.equal(plan.lead, 0);
     assert.equal(plan.tail, 0);
-    assert.equal(plan.cycles % 3, 0, 'multiple de 3');
     assert.equal(pcm.length, plan.cycles * plan.len * rate);
     assert.ok(pcm.length / rate > 150 && pcm.length / rate < 330, `quelques minutes : ${pcm.length / rate} s`);
     // La fin enchaîne sur le début comme n'importe quelle jonction de cycles : aucun saut plus grand qu'ailleurs.
@@ -137,23 +123,20 @@ for (const style of GUIDE_STYLES.map((g) => g.id)) {
   });
 }
 
-test('piste en boucle : parfaitement périodique (un tour de trois cycles est identique au suivant)', async () => {
+test('piste en boucle : parfaitement périodique (un cycle est identique au suivant)', async () => {
   const p = preset('long');
   const { pcm, rate, plan } = await renderTrack({ preset: p, style: 'bol', loop: true });
-  const period = 3 * plan.len * rate;
-  const a = 2 * period / 3 | 0; // loin des jonctions
-  for (const i of [a, a + 1234, a + 20000, a + 50000]) assert.equal(pcm[i], pcm[i + period], 'même échantillon un tour de trois cycles plus tard');
+  const period = plan.len * rate;
+  const a = 2 * period | 0; // loin des jonctions
+  for (const i of [a, a + 1234, a + 20000, a + 50000]) assert.equal(pcm[i], pcm[i + period], 'même échantillon un cycle plus tard');
 });
 
 test('piste en boucle : un 4-7-8 donne aussi un tour d’environ quatre minutes', () => {
   const n = loopCycles(preset('478'));
-  assert.equal(n % 3, 0);
   assert.ok(n * 19 > 150 && n * 19 < 330);
 });
 
-import { sessionPlan, DURATIONS, durationLabel } from '../js/breath.js';
-
-for (const style of GUIDE_STYLES.map((g) => g.id)) {
+for (const style of STYLES) {
   test(`séance longue « ${style} » : la retombée est courte, finit dans le silence et n'ajoute pas de claquement`, async () => {
     const p = preset('long');
     const { pcm, rate, plan } = await renderTrack({ preset: p, cycles: 0, lead: 0, style });

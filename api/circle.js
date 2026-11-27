@@ -47,10 +47,11 @@ const sameHash = (a, b) => {
   const y = Buffer.from(b, 'hex');
   return x.length === y.length && timingSafeEqual(x, y);
 };
+const isStale = (m, now) => now - m.at > LIMITS.staleMs;
 /** Retire les fiches muettes depuis trop longtemps (et leur boîte) : elles ne gardent ni une place ni la série. */
 const prune = (doc, now) => {
   for (const [mid, m] of Object.entries(doc.members)) {
-    if (now - m.at > LIMITS.staleMs) {
+    if (isStale(m, now)) {
       delete doc.members[mid];
       delete doc.inbox[mid];
     }
@@ -114,7 +115,7 @@ export function createHandler(store) {
         if (!rec) return send(404, { error: 'not_found' });
         const me = typeof body.me === 'string' && MID_RE.test(body.me) ? body.me : null;
         const now = Date.now();
-        const live = Object.entries(rec.members).filter(([, m]) => now - m.at <= LIMITS.staleMs); // les fiches muettes ne s'affichent plus
+        const live = Object.entries(rec.members).filter(([, m]) => !isStale(m, now)); // les fiches muettes ne s'affichent plus
         return send(200, {
           rev: rec.rev,
           members: live.map(([mid, m]) => ({ mid, blob: m.blob, at: m.at })),

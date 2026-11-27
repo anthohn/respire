@@ -35,10 +35,7 @@ export function trackPlan(preset, minutes, { cycles, lead = LEAD, tail = TAIL, l
   return { len, cycles: n, lead, tail, breath, total: lead + breath + tail, loop: false };
 }
 
-/**
- * Nombre de cycles d'une piste en boucle : environ quatre minutes, et un multiple de 3 (la boucle reste ainsi un
- * nombre rond de tours si un guidage venait à alterner trois variantes).
- */
+/** Nombre de cycles d'une piste en boucle : environ quatre minutes (trois fois les cycles qui tiennent dans 80 s). */
 export function loopCycles(preset) {
   return 3 * Math.max(1, Math.round(80 / cycleLength(preset)));
 }
@@ -170,6 +167,18 @@ function modal(freq, dur, modes, attack, rate) {
   return out;
 }
 
+const peakAbs = (a, floor = 0) => {
+  let p = floor;
+  for (let i = 0; i < a.length; i++) if (Math.abs(a[i]) > p) p = Math.abs(a[i]);
+  return p;
+};
+const scaleBy = (a, g) => {
+  for (let i = 0; i < a.length; i++) a[i] *= g;
+};
+const addInto = (dst, src, at) => {
+  for (let i = 0; i < src.length; i++) dst[at + i] += src[i]; // ce qui dépasse est ignoré (tableaux typés)
+};
+
 /** « La salle » : du bruit adouci qui s'éteint en 2,8 s, normalisé en énergie. Même graine : même salle à chaque fois. */
 function roomImpulse(rate) {
   const n = Math.round(2.8 * rate);
@@ -188,8 +197,7 @@ function roomImpulse(rate) {
       e += ir[i] * ir[i];
     }
   }
-  const k = 1 / Math.sqrt(e);
-  for (let i = 0; i < n; i++) ir[i] *= k;
+  scaleBy(ir, 1 / Math.sqrt(e));
   return ir;
 }
 
@@ -222,8 +230,7 @@ function bolSounds(rate) {
         await pause();
         const place = (buf, at, note, dur) => {
           const sig = modal(note, dur, CHIME_MODES, 0.008, rate);
-          const a = Math.round(at * rate);
-          for (let i = 0; i < sig.length; i++) buf[a + i] += sig[i];
+          addInto(buf, sig, Math.round(at * rate));
         };
         const [n1, n2, n3, n4] = CHIME_NOTES;
         const introDry = new Float32Array(Math.round(4.4 * rate));
@@ -239,12 +246,8 @@ function bolSounds(rate) {
         const outro = wet(outroDry);
         // L'ouverture et la clôture ont le niveau d'un cycle de respiration (énergie sur les 5 s de l'installation / de la retombée).
         const cycleEnergy = sumSquares(inhale, 10, rate) + sumSquares(exhale, 10, rate);
-        const gIntro = Math.sqrt(cycleEnergy / 10 / (sumSquares(intro, 5, rate) / 5));
-        const gOutro = Math.sqrt(cycleEnergy / 10 / (sumSquares(outro, 5, rate) / 5));
-        for (let i = 0; i < intro.length; i++) intro[i] *= gIntro;
-        for (let i = 0; i < outro.length; i++) outro[i] *= gOutro;
-        let refPeak = 1e-9;
-        for (const a of [inhale, exhale, intro, outro]) for (let i = 0; i < a.length; i++) if (Math.abs(a[i]) > refPeak) refPeak = Math.abs(a[i]);
+        for (const mark of [intro, outro]) scaleBy(mark, Math.sqrt(cycleEnergy / 10 / (sumSquares(mark, 5, rate) / 5)));
+        const refPeak = [inhale, exhale, intro, outro].reduce((p, a) => peakAbs(a, p), 1e-9);
         return { inhale, exhale, intro, outro, refPeak };
       })(),
     );
@@ -259,13 +262,16 @@ export function warmGuide(style = DEFAULT_GUIDE, rate = TRACK_RATE) {
 
 // ---------- Rendu ----------
 
-/** Ajoute `src` (déjà pondéré par `weight(j)`) dans `pcm` à partir de l'indice `at`, en ignorant ce qui sort de la piste. */
-function mixInto(pcm, at, src, scale, weight, circular = false) {
-  for (let j = 0; j < src.length; j++) {
+/** Un son au niveau de la piste, en entiers 16 bits : calculé une fois, puis ajouté à chaque cycle. */
+const quantize = (src, scale) => Int32Array.from(src, (v) => Math.round(v * scale * 32767));
+
+/** Ajoute `q` (voir `quantize`) dans `pcm` à partir de l'indice `at`, en ignorant ce qui sort de la piste. */
+function mixInto(pcm, at, q, circular = false) {
+  for (let j = 0; j < q.length; j++) {
     let i = at + j;
     if (circular) i = mod(i, pcm.length); // en boucle, la fin déborde sur le début et inversement
     else if (i < 0 || i >= pcm.length) continue;
-    const v = pcm[i] + Math.round(src[j] * scale * (weight ? weight(j) : 1) * 32767);
+    const v = pcm[i] + q[j];
     pcm[i] = v > 32767 ? 32767 : v < -32768 ? -32768 : v;
   }
 }
@@ -285,16 +291,17 @@ export async function renderTrack({ preset, minutes, cycles, style = DEFAULT_GUI
 
   // Fondu d'entrée et de sortie de toute la piste.
   const resumes = style !== 'reperes' && plan.cycles === 0 && leadN === 0; // retombée seule, qui prolonge la piste en boucle
-  const fadeIn = loop || resumes ? 0 : 0.05;
-  const fadeOut = loop ? 0 : style === 'reperes' ? 0.6 : 1.2;
+  const fadeIn = resumes ? 0 : 0.05;
+  const fadeOut = style === 'reperes' ? 0.6 : 1.2;
   const fade = () => {
     if (loop) return;
-    for (let i = 0; i < total; i++) {
-      if (i < fadeIn * rate || total - i < fadeOut * rate) {
-        const x = Math.min(fadeIn > 0 ? Math.min(1, i / (fadeIn * rate)) : 1, Math.min(1, (total - i) / (fadeOut * rate)));
-        pcm[i] = Math.round(pcm[i] * x * x * (3 - 2 * x)); // lissé
-      }
-    }
+    const ramp = (i) => {
+      const x = Math.min(1, fadeIn > 0 ? i / (fadeIn * rate) : 1, (total - i) / (fadeOut * rate));
+      pcm[i] = Math.round(pcm[i] * x * x * (3 - 2 * x)); // lissé
+    };
+    const inEnd = Math.min(total, Math.ceil(fadeIn * rate));
+    for (let i = 0; i < inEnd; i++) ramp(i);
+    for (let i = Math.max(inEnd, Math.floor(total - fadeOut * rate) + 1); i < total; i++) ramp(i); // seuls les deux bords sont touchés
   };
 
   if (style === 'reperes') {
@@ -310,17 +317,16 @@ export async function renderTrack({ preset, minutes, cycles, style = DEFAULT_GUI
     };
     place(cycle, CUES.glisse.inhale, 0, true);
     place(cycle, CUES.glisse.exhale, preset.inhale + preset.hold1, true);
-    let peak = 1e-9;
-    for (let i = 0; i < cycle.length; i++) if (Math.abs(cycle[i]) > peak) peak = Math.abs(cycle[i]);
-    const scale = level / peak;
-    for (let c = 0; c < plan.cycles; c++) mixInto(pcm, leadN + c * L, cycle, scale);
+    const scale = level / peakAbs(cycle, 1e-9);
+    const q = quantize(cycle, scale);
+    for (let c = 0; c < plan.cycles; c++) mixInto(pcm, leadN + c * L, q);
     if (!loop) {
       const edge = new Float32Array(Math.max(leadN, tailN) + 3 * rate);
       place(edge, CHIMES.start, 0.4, false);
-      mixInto(pcm, 0, edge.subarray(0, leadN), level / peak);
+      mixInto(pcm, 0, quantize(edge.subarray(0, leadN), scale));
       const endChime = new Float32Array(tailN + rate);
       place(endChime, CHIMES.end, 0, false);
-      mixInto(pcm, leadN + plan.cycles * L, endChime.subarray(0, tailN), level / peak);
+      mixInto(pcm, leadN + plan.cycles * L, quantize(endChime.subarray(0, tailN), scale));
       fade();
     }
     return { pcm, rate, plan };
@@ -330,19 +336,22 @@ export async function renderTrack({ preset, minutes, cycles, style = DEFAULT_GUI
   const sounds = await bolSounds(rate);
   const exhaleAt = Math.round((preset.inhale + preset.hold1) * rate);
   const cycle = new Float32Array(Math.max(L, sounds.inhale.length, exhaleAt + sounds.exhale.length));
-  for (let i = 0; i < sounds.inhale.length; i++) cycle[i] += sounds.inhale[i];
-  for (let i = 0; i < sounds.exhale.length; i++) cycle[exhaleAt + i] += sounds.exhale[i];
+  addInto(cycle, sounds.inhale, 0);
+  addInto(cycle, sounds.exhale, exhaleAt);
   const bolLevel = level * BOL_GAIN;
   const scale = bolLevel / sounds.refPeak;
+  const q = quantize(cycle, scale);
   // En boucle, la résonance de la fin du tour se prolonge sur le début (la jonction est invisible) ; sinon elle déborde sur la suite.
-  for (let c = 0; c < plan.cycles; c++) mixInto(pcm, leadN + c * L, cycle, scale, null, loop);
+  for (let c = 0; c < plan.cycles; c++) {
+    mixInto(pcm, leadN + c * L, q, loop);
+    if (c % 8 === 7) await pause(); // une longue séance ne fige pas l'écran
+  }
   // Une retombée seule (fin d'une longue séance) reprend la résonance du cycle précédent, que la piste en boucle vient de laisser.
-  if (!loop && plan.cycles === 0 && leadN === 0) mixInto(pcm, -L, cycle, scale);
-  if (!loop && plan.lead >= MARK_MIN) mixInto(pcm, 0, sounds.intro, scale);
-  if (!loop && plan.tail >= MARK_MIN) mixInto(pcm, leadN + plan.cycles * L, sounds.outro, scale);
+  if (resumes) mixInto(pcm, -L, q);
+  if (!loop && plan.lead >= MARK_MIN) mixInto(pcm, 0, quantize(sounds.intro, scale));
+  if (!loop && plan.tail >= MARK_MIN) mixInto(pcm, leadN + plan.cycles * L, quantize(sounds.outro, scale));
   // Jamais plus fort que le niveau demandé, même si des résonances se superposent.
-  let peak = 0;
-  for (let i = 0; i < total; i++) if (Math.abs(pcm[i]) > peak) peak = Math.abs(pcm[i]);
+  const peak = peakAbs(pcm);
   const cap = bolLevel * 32767;
   if (peak > cap) for (let i = 0; i < total; i++) pcm[i] = Math.round((pcm[i] * cap) / peak);
   fade();

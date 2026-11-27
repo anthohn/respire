@@ -2,10 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHandler } from '../api/circle.js';
 import { memoryStore } from '../api/_store.js';
-import { deriveKeys, encryptPayload, decryptPayload } from '../js/sync.js';
+import { deriveKeys, encryptPayload, decryptPayload, buildPayload, applyPayload, mergePayloads } from '../js/sync.js';
+import { sanitizeCircle } from '../js/store.js';
 import {
   parseInvite, inviteLink, cleanName, buildStatus, parseStatus, memberView, summarize, sortMembers, canSend,
   createCircle, joinCircle, publish, fetchCircle, sendSign, ackEvents, leaveCircle, CircleError, newIdentity,
+  peekCircle, circleSeries, weekOverview, missingText, seriesLine, sinceLabel, dayActive, PAUSE_DAYS, todayLine,
+  releaseIdentity, sameName,
 } from '../js/circle.js';
 import { addDays } from '../js/stats.js';
 
@@ -188,8 +191,6 @@ test('identité : identifiants aléatoires, au bon format', () => {
   assert.notEqual(a.mid, newIdentity().mid);
 });
 
-import { buildPayload, applyPayload, mergePayloads } from '../js/sync.js';
-import { sanitizeCircle } from '../js/store.js';
 
 test('synchronisation : l’identité du cercle suit mes appareils, pas ce qui est propre à chacun', () => {
   const identity = { code: '1234567890123456', mid: 'a'.repeat(16), key: 'b'.repeat(64), cn: 'La famille', joinedAt: 1763500000000 };
@@ -222,8 +223,6 @@ test('réglages : un cercle abîmé est ignoré au lieu de faire planter l’app
   assert.deepEqual(ok.sent, {});
 });
 
-import { peekCircle } from '../js/circle.js';
-
 test('invitation : on voit le cercle et ses membres avant de le rejoindre, sans s’y inscrire', async () => {
   installServer();
   const lea = phone('Léa');
@@ -238,8 +237,6 @@ test('invitation : on voit le cercle et ses membres avant de le rejoindre, sans 
   await assert.rejects(() => peekCircle('0000000000000000'), (e) => e.code === 'unknown');
   await assert.rejects(() => peekCircle('12'), (e) => e.code === 'invalid');
 });
-
-import { circleSeries, weekOverview, missingText, seriesLine, sinceLabel, dayActive } from '../js/circle.js';
 
 // Un cercle de test : chacun avec ses jours de pratique (décalages par rapport à aujourd'hui) et sa date d'arrivée.
 const person = (name, offs, { since = -30, me = false } = {}) => ({
@@ -318,9 +315,6 @@ test('dernière séance : hier, il y a 6 j', () => {
 
 // ---------- Les fantômes ne bloquent jamais la série ----------
 
-import { PAUSE_DAYS, todayLine, memberView as viewOf } from '../js/circle.js';
-
-const run = (...offs) => offs;
 const daily = Array.from({ length: 30 }, (_, i) => -i);
 
 test('fantômes : une fiche qui n’a jamais respiré (un doublon, quelqu’un parti) ne bloque pas la série', () => {
@@ -329,8 +323,8 @@ test('fantômes : une fiche qui n’a jamais respiré (un doublon, quelqu’un p
   assert.equal(s.days, 28, 'la série continue sans lui');
   assert.equal(s.todayValid, true);
   assert.deepEqual([s.done, s.total], [2, 2], 'il n’est pas compté dans le cercle du jour');
-  assert.equal(viewOf(members[2].status, TODAY).paused, true);
-  assert.equal(viewOf(members[0].status, TODAY).paused, false);
+  assert.equal(memberView(members[2].status, TODAY).paused, true);
+  assert.equal(memberView(members[0].status, TODAY).paused, false);
 });
 
 test('fantômes : sans séance depuis plus de 14 jours, on est en pause ; avant, on compte encore', () => {
@@ -341,10 +335,10 @@ test('fantômes : sans séance depuis plus de 14 jours, on est en pause ; avant,
   const recent = circleSeries([lea, paul, tired(10)], TODAY);
   assert.equal(recent.days, 0, 'il a manqué hier : la série du cercle est cassée');
   assert.ok(recent.missing.some((m) => m.name === 'Max'));
-  assert.equal(viewOf(tired(10).status, TODAY).paused, false);
+  assert.equal(memberView(tired(10).status, TODAY).paused, false);
   // 20 jours : en pause, la série ne le compte plus
   const gone = tired(PAUSE_DAYS + 6);
-  assert.equal(viewOf(gone.status, TODAY).paused, true);
+  assert.equal(memberView(gone.status, TODAY).paused, true);
   const s = circleSeries([lea, paul, gone], TODAY);
   assert.equal(s.todayValid, true);
   assert.equal(s.days, 7, 'tant qu’il comptait encore (jusqu’à 14 jours après sa dernière séance), la série était cassée : elle repart d’il y a 6 jours');
@@ -387,10 +381,8 @@ test('fantômes : seul avec des fiches en pause, la série attend quelqu’un d�
 test('fantômes : une fiche d’une ancienne version (sans les 28 jours) n’est pas écartée à tort', () => {
   const p = person('Vieux', [-20], { since: -40 });
   p.status.acts = ''; // ancienne application : seulement la semaine en cours
-  assert.equal(viewOf(p.status, TODAY).paused, false, 'on ne sait pas : on ne l’écarte pas');
+  assert.equal(memberView(p.status, TODAY).paused, false, 'on ne sait pas : on ne l’écarte pas');
 });
-
-import { releaseIdentity } from '../js/circle.js';
 
 test('synchronisation : l’identité de cercle remplacée est retirée du serveur (pas de fiche fantôme)', async () => {
   installServer();
@@ -414,8 +406,6 @@ test('synchronisation : l’identité de cercle remplacée est retirée du serve
   // Un hors-ligne ne casse rien
   await releaseIdentity({ code: phoneA.circle.code, mid: 'f'.repeat(16), key: 'e'.repeat(64) });
 });
-
-import { sameName } from '../js/circle.js';
 
 test('doublons : deux prénoms se ressemblent sans tenir compte des accents ni des majuscules', () => {
   assert.equal(sameName('Léa', 'lea'), true);
